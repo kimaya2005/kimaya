@@ -15,6 +15,7 @@ DB_NAME = "raut_enterprise_permanent.db"
 
 def init_db():
     conn = sqlite3.connect(DB_NAME)
+    conn.execute("PRAGMA foreign_keys = ON")
     c = conn.cursor()
 
     c.execute(
@@ -94,12 +95,25 @@ def init_db():
     """
     )
 
+    # Ensure at least one default custom page exists before migrating/inserting rows
+    c.execute("SELECT id FROM custom_pages ORDER BY id ASC LIMIT 1")
+    first_page = c.fetchone()
+    if not first_page:
+        c.execute(
+            "INSERT INTO custom_pages (page_name, description_text, updated_by) VALUES (?, ?, ?)",
+            ("Page 1 - Main Sheet", "", "system"),
+        )
+        conn.commit()
+        c.execute("SELECT id FROM custom_pages ORDER BY id ASC LIMIT 1")
+        first_page = c.fetchone()
+    default_page_id = first_page[0]
+
     # Rows belonging to a specific custom page
     c.execute(
         """
         CREATE TABLE IF NOT EXISTS custom_sheet_rows (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            page_id INTEGER NOT NULL,
+            page_id INTEGER NOT NULL DEFAULT 1,
             product TEXT DEFAULT '',
             history_note TEXT DEFAULT '',
             price TEXT DEFAULT '',
@@ -110,6 +124,18 @@ def init_db():
         )
     """
     )
+
+    # Migrate existing custom_sheet_rows table if page_id column is missing
+    c.execute("PRAGMA table_info(custom_sheet_rows)")
+    existing_cols = [col[1] for col in c.fetchall()]
+    if "page_id" not in existing_cols:
+        c.execute(
+            f"ALTER TABLE custom_sheet_rows ADD COLUMN page_id INTEGER NOT NULL DEFAULT {default_page_id}"
+        )
+        c.execute(
+            "UPDATE custom_sheet_rows SET page_id = ? WHERE page_id IS NULL OR page_id = 0",
+            (default_page_id,),
+        )
 
     c.execute("SELECT * FROM users WHERE username = ?", ("admin",))
     if not c.fetchone():
@@ -130,14 +156,6 @@ def init_db():
         c.execute(
             "INSERT INTO inventory (item_name, barcode_id, price, slot_category) VALUES (?, ?, ?, ?)",
             ("10 no nut - 1/2 inch", "0000000000001", "₹50", "Hardware"),
-        )
-
-    # Ensure at least one default custom page exists
-    c.execute("SELECT COUNT(*) FROM custom_pages")
-    if c.fetchone()[0] == 0:
-        c.execute(
-            "INSERT INTO custom_pages (page_name, description_text, updated_by) VALUES (?, ?, ?)",
-            ("Page 1 - Main Sheet", "", "system"),
         )
 
     conn.commit()
@@ -525,6 +543,7 @@ else:
                 if st.button("❌ Delete This Page", key="delete_current_custom_page"):
                     conn = get_db_connection()
                     c = conn.cursor()
+                    c.execute("DELETE FROM custom_sheet_rows WHERE page_id = ?", (active_page_id,))
                     c.execute("DELETE FROM custom_pages WHERE id = ?", (active_page_id,))
                     conn.commit()
                     conn.close()
