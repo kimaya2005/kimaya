@@ -81,29 +81,32 @@ def init_db():
     """
     )
 
-    # Manual Excel-like table rows (no pre-populated dummy rows)
+    # Multiple custom pages/sheets support
     c.execute(
         """
-        CREATE TABLE IF NOT EXISTS custom_sheet_rows (
+        CREATE TABLE IF NOT EXISTS custom_pages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            product TEXT DEFAULT '',
-            history_note TEXT DEFAULT '',
-            price TEXT DEFAULT '',
-            extra_info TEXT DEFAULT '',
+            page_name TEXT UNIQUE NOT NULL,
+            description_text TEXT DEFAULT '',
             updated_by TEXT DEFAULT '',
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """
     )
 
-    # Description / Notes stored for the Excel sheet page
+    # Rows belonging to a specific custom page
     c.execute(
         """
-        CREATE TABLE IF NOT EXISTS sheet_description (
-            id INTEGER PRIMARY KEY CHECK (id = 1),
-            description_text TEXT DEFAULT '',
+        CREATE TABLE IF NOT EXISTS custom_sheet_rows (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            page_id INTEGER NOT NULL,
+            product TEXT DEFAULT '',
+            history_note TEXT DEFAULT '',
+            price TEXT DEFAULT '',
+            extra_info TEXT DEFAULT '',
             updated_by TEXT DEFAULT '',
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (page_id) REFERENCES custom_pages(id) ON DELETE CASCADE
         )
     """
     )
@@ -129,11 +132,12 @@ def init_db():
             ("10 no nut - 1/2 inch", "0000000000001", "₹50", "Hardware"),
         )
 
-    c.execute("SELECT * FROM sheet_description WHERE id = 1")
-    if not c.fetchone():
+    # Ensure at least one default custom page exists
+    c.execute("SELECT COUNT(*) FROM custom_pages")
+    if c.fetchone()[0] == 0:
         c.execute(
-            "INSERT INTO sheet_description (id, description_text, updated_by) VALUES (1, ?, ?)",
-            ("", ""),
+            "INSERT INTO custom_pages (page_name, description_text, updated_by) VALUES (?, ?, ?)",
+            ("Page 1 - Main Sheet", "", "system"),
         )
 
     conn.commit()
@@ -142,7 +146,9 @@ def init_db():
 init_db()
 
 def get_db_connection():
-    return sqlite3.connect(DB_NAME)
+    conn = sqlite3.connect(DB_NAME)
+    conn.execute("PRAGMA foreign_keys = ON")
+    return conn
 
 def log_activity(username, action_type, details):
     try:
@@ -252,6 +258,29 @@ def generate_custom_barcode_image(item_name, barcode_text):
     final_io.seek(0)
     return final_io
 
+def build_print_html(img_io):
+    img_bytes = img_io.getvalue()
+    encoded_img = base64.b64encode(img_bytes).decode("utf-8")
+    return f"""
+    <html>
+    <head>
+        <style>
+            @page {{ size: 50mm 37mm; margin: 0; }}
+            body {{ margin: 0; display: flex; justify-content: center; align-items: center; height: 100vh; background: white; }}
+            img {{ width: 50mm; height: 37mm; object-fit: contain; }}
+        </style>
+    </head>
+    <body>
+        <img id="print_img" src="data:image/png;base64,{encoded_img}" />
+        <script>
+            document.getElementById('print_img').onload = function() {{
+                window.print();
+            }};
+        </script>
+    </body>
+    </html>
+    """
+
 def get_next_barcode_id():
     conn = get_db_connection()
     c = conn.cursor()
@@ -272,6 +301,12 @@ if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
     st.session_state.username = ""
     st.session_state.role = ""
+
+if "active_custom_page_id" not in st.session_state:
+    st.session_state.active_custom_page_id = None
+
+if "generated_preview_item" not in st.session_state:
+    st.session_state.generated_preview_item = None
 
 if st.session_state.logged_in:
     conn = get_db_connection()
@@ -342,7 +377,7 @@ else:
             "Navigation", 
             [
                 "📊 Inventory Dashboard",
-                "📊 Excel Table & Notes",
+                "📊 Excel Sheet & Notes",
                 "📦 App Barcode Storage", 
                 "🖨️ Direct Print / Download 50x37mm",
                 "📂 App Downloaded History", 
@@ -358,7 +393,7 @@ else:
             "Navigation", 
             [
                 "📊 Inventory Dashboard",
-                "📊 Excel Table & Notes",
+                "📊 Excel Sheet & Notes",
                 "📦 App Barcode Storage", 
                 "🖨️ Direct Print / Download 50x37mm",
                 "📂 App Downloaded History", 
@@ -412,19 +447,108 @@ else:
         else:
             st.info("Export karne ke liye inventory mein koi items nahi hain.")
 
-    # --- SECTION 0.5: SINGLE PAGE — TOP HALF EXCEL TABLE, BOTTOM DESCRIPTION ---
-    elif menu == "📊 Excel Table & Notes":
-        st.title("📊 Excel Sheet & Description")
-        st.caption("Upar half page mein manually row add/edit/delete karein, niche description likhein.")
+    # --- SECTION 0.5: MULTI-PAGE EXCEL SHEETS + DESCRIPTION ---
+    elif menu == "📊 Excel Sheet & Notes":
+        st.title("📊 Excel Sheets & Description")
 
         conn = get_db_connection()
-        sheet_df = pd.read_sql_query(
-            "SELECT id, product, history_note, price, extra_info FROM custom_sheet_rows ORDER BY id ASC",
+        pages_df = pd.read_sql_query(
+            "SELECT id, page_name, description_text FROM custom_pages ORDER BY id ASC",
             conn,
         )
         conn.close()
 
-        # Top half: Manual editable Excel-like table
+        if pages_df.empty:
+            conn = get_db_connection()
+            c = conn.cursor()
+            c.execute(
+                "INSERT INTO custom_pages (page_name, description_text, updated_by) VALUES (?, ?, ?)",
+                ("Page 1 - Main Sheet", "", st.session_state.username),
+            )
+            conn.commit()
+            pages_df = pd.read_sql_query(
+                "SELECT id, page_name, description_text FROM custom_pages ORDER BY id ASC",
+                conn,
+            )
+            conn.close()
+
+        page_map = {str(r["page_name"]): int(r["id"]) for _, r in pages_df.iterrows()}
+        page_names = list(page_map.keys())
+
+        default_idx = 0
+        if st.session_state.active_custom_page_id in page_map.values():
+            for idx, pname in enumerate(page_names):
+                if page_map[pname] == st.session_state.active_custom_page_id:
+                    default_idx = idx
+                    break
+
+        col_p_sel, col_p_add = st.columns([2, 2])
+        with col_p_sel:
+            selected_page_name = st.selectbox(
+                "📄 Page / Sheet Chunein",
+                page_names,
+                index=default_idx,
+                key="custom_page_selector",
+            )
+            active_page_id = page_map[selected_page_name]
+            st.session_state.active_custom_page_id = active_page_id
+
+        with col_p_add:
+            with st.form("create_new_custom_page_form", clear_on_submit=True):
+                new_p_name = st.text_input("➕ Naya Page / Sheet Name", placeholder="e.g. Page 2 - Rate List")
+                create_p_btn = st.form_submit_button("➕ Naya Page Banayein")
+                if create_p_btn:
+                    clean_p = new_p_name.strip()
+                    if clean_p:
+                        try:
+                            conn = get_db_connection()
+                            c = conn.cursor()
+                            c.execute(
+                                "INSERT INTO custom_pages (page_name, description_text, updated_by) VALUES (?, ?, ?)",
+                                (clean_p, "", st.session_state.username),
+                            )
+                            new_pid = c.lastrowid
+                            conn.commit()
+                            conn.close()
+                            st.session_state.active_custom_page_id = new_pid
+                            log_activity(st.session_state.username, "CREATE_SHEET_PAGE", f"Created sheet page: {clean_p}")
+                            st.success(f"✅ Naya page '{clean_p}' ban gaya!")
+                            st.rerun()
+                        except sqlite3.IntegrityError:
+                            st.error("⚠️ Is naam ka page pehle se maujood hai.")
+                    else:
+                        st.warning("Page ka naam likhein.")
+
+        if len(page_names) > 1:
+            with st.expander("🗑️ Current Page Delete Karein"):
+                st.warning(f"'{selected_page_name}' page aur uski rows delete ho jayengi.")
+                if st.button("❌ Delete This Page", key="delete_current_custom_page"):
+                    conn = get_db_connection()
+                    c = conn.cursor()
+                    c.execute("DELETE FROM custom_pages WHERE id = ?", (active_page_id,))
+                    conn.commit()
+                    conn.close()
+                    st.session_state.active_custom_page_id = None
+                    log_activity(st.session_state.username, "DELETE_SHEET_PAGE", f"Deleted sheet page: {selected_page_name}")
+                    st.success("✅ Page delete ho gaya!")
+                    st.rerun()
+
+        st.markdown("---")
+
+        conn = get_db_connection()
+        sheet_df = pd.read_sql_query(
+            "SELECT id, product, history_note, price, extra_info FROM custom_sheet_rows WHERE page_id = ? ORDER BY id ASC",
+            conn,
+            params=(active_page_id,),
+        )
+        c = conn.cursor()
+        c.execute("SELECT description_text FROM custom_pages WHERE id = ?", (active_page_id,))
+        p_desc_row = c.fetchone()
+        conn.close()
+
+        curr_desc = p_desc_row[0] if p_desc_row else ""
+
+        # Top half: Manual editable Excel-like table for selected page
         edited_df = st.data_editor(
             sheet_df,
             use_container_width=True,
@@ -438,15 +562,15 @@ else:
                 "price": st.column_config.TextColumn("Price"),
                 "extra_info": st.column_config.TextColumn("Other / Info"),
             },
-            key="manual_excel_table",
+            key=f"manual_excel_table_{active_page_id}",
         )
 
         col_t1, col_t2, col_t3 = st.columns(3)
         with col_t1:
-            if st.button("💾 Save Table", type="primary"):
+            if st.button("💾 Save Table", type="primary", key=f"save_tbl_{active_page_id}"):
                 conn = get_db_connection()
                 c = conn.cursor()
-                c.execute("DELETE FROM custom_sheet_rows")
+                c.execute("DELETE FROM custom_sheet_rows WHERE page_id = ?", (active_page_id,))
                 for _, r in edited_df.iterrows():
                     p_val = str(r.get("product") or "").strip()
                     h_val = str(r.get("history_note") or "").strip()
@@ -455,35 +579,37 @@ else:
                     if any([p_val, h_val, pr_val, ex_val]):
                         c.execute(
                             """
-                            INSERT INTO custom_sheet_rows (product, history_note, price, extra_info, updated_by)
-                            VALUES (?, ?, ?, ?, ?)
+                            INSERT INTO custom_sheet_rows (page_id, product, history_note, price, extra_info, updated_by)
+                            VALUES (?, ?, ?, ?, ?, ?)
                             """,
-                            (p_val, h_val, pr_val, ex_val, st.session_state.username),
+                            (active_page_id, p_val, h_val, pr_val, ex_val, st.session_state.username),
                         )
                 conn.commit()
                 conn.close()
-                log_activity(st.session_state.username, "SHEET_SAVE", "Saved manual table edits.")
+                log_activity(st.session_state.username, "SHEET_SAVE", f"Saved table edits on page '{selected_page_name}'.")
                 st.success("✅ Table save ho gaya!")
                 st.rerun()
 
         with col_t2:
             sheet_csv = edited_df.to_csv(index=False).encode("utf-8")
+            safe_fname = selected_page_name.lower().replace(" ", "_")
             st.download_button(
                 label="📥 Download CSV",
                 data=sheet_csv,
-                file_name="raut_manual_table.csv",
+                file_name=f"{safe_fname}.csv",
                 mime="text/csv",
+                key=f"dl_csv_{active_page_id}",
             )
 
         with col_t3:
-            if st.button("🗑️ Clear All Rows"):
+            if st.button("🗑️ Clear All Rows", key=f"clr_rows_{active_page_id}"):
                 conn = get_db_connection()
                 c = conn.cursor()
-                c.execute("DELETE FROM custom_sheet_rows")
+                c.execute("DELETE FROM custom_sheet_rows WHERE page_id = ?", (active_page_id,))
                 conn.commit()
                 conn.close()
-                log_activity(st.session_state.username, "SHEET_CLEAR", "Cleared all rows from manual table.")
-                st.success("✅ Saare rows delete ho gaye!")
+                log_activity(st.session_state.username, "SHEET_CLEAR", f"Cleared rows on page '{selected_page_name}'.")
+                st.success("✅ Is page ke saare rows delete ho gaye!")
                 st.rerun()
 
         # Dedicated Edit / Delete single row option
@@ -493,82 +619,76 @@ else:
                     f"Row #{int(r['id'])} — {r['product'] or '(Empty)'} | {r['price'] or '-'}": int(r["id"])
                     for _, r in sheet_df.iterrows()
                 }
-                sel_label = st.selectbox("Select Row", list(row_options.keys()), key="sel_sheet_row")
+                sel_label = st.selectbox("Select Row", list(row_options.keys()), key=f"sel_sheet_row_{active_page_id}")
                 sel_row_id = row_options[sel_label]
                 curr_row = sheet_df[sheet_df["id"] == sel_row_id].iloc[0]
 
                 e1, e2, e3, e4 = st.columns(4)
                 with e1:
-                    ed_prod = st.text_input("Product", value=str(curr_row["product"] or ""), key="ed_prod")
+                    ed_prod = st.text_input("Product", value=str(curr_row["product"] or ""), key=f"ed_prod_{active_page_id}_{sel_row_id}")
                 with e2:
-                    ed_hist = st.text_input("History", value=str(curr_row["history_note"] or ""), key="ed_hist")
+                    ed_hist = st.text_input("History", value=str(curr_row["history_note"] or ""), key=f"ed_hist_{active_page_id}_{sel_row_id}")
                 with e3:
-                    ed_price = st.text_input("Price", value=str(curr_row["price"] or ""), key="ed_price")
+                    ed_price = st.text_input("Price", value=str(curr_row["price"] or ""), key=f"ed_price_{active_page_id}_{sel_row_id}")
                 with e4:
-                    ed_extra = st.text_input("Other / Info", value=str(curr_row["extra_info"] or ""), key="ed_extra")
+                    ed_extra = st.text_input("Other / Info", value=str(curr_row["extra_info"] or ""), key=f"ed_extra_{active_page_id}_{sel_row_id}")
 
                 b_upd, b_del = st.columns(2)
                 with b_upd:
-                    if st.button("✏️ Update Selected Row"):
+                    if st.button("✏️ Update Selected Row", key=f"upd_row_btn_{active_page_id}_{sel_row_id}"):
                         conn = get_db_connection()
                         c = conn.cursor()
                         c.execute(
                             """
                             UPDATE custom_sheet_rows
                             SET product = ?, history_note = ?, price = ?, extra_info = ?, updated_by = ?, updated_at = CURRENT_TIMESTAMP
-                            WHERE id = ?
+                            WHERE id = ? AND page_id = ?
                             """,
-                            (ed_prod.strip(), ed_hist.strip(), ed_price.strip(), ed_extra.strip(), st.session_state.username, sel_row_id),
+                            (ed_prod.strip(), ed_hist.strip(), ed_price.strip(), ed_extra.strip(), st.session_state.username, sel_row_id, active_page_id),
                         )
                         conn.commit()
                         conn.close()
-                        log_activity(st.session_state.username, "SHEET_ROW_UPDATE", f"Updated row #{sel_row_id}.")
+                        log_activity(st.session_state.username, "SHEET_ROW_UPDATE", f"Updated row #{sel_row_id} on '{selected_page_name}'.")
                         st.success("✅ Row update ho gaya!")
                         st.rerun()
 
                 with b_del:
-                    if st.button("❌ Delete Selected Row"):
+                    if st.button("❌ Delete Selected Row", key=f"del_row_btn_{active_page_id}_{sel_row_id}"):
                         conn = get_db_connection()
                         c = conn.cursor()
-                        c.execute("DELETE FROM custom_sheet_rows WHERE id = ?", (sel_row_id,))
+                        c.execute("DELETE FROM custom_sheet_rows WHERE id = ? AND page_id = ?", (sel_row_id, active_page_id))
                         conn.commit()
                         conn.close()
-                        log_activity(st.session_state.username, "SHEET_ROW_DELETE", f"Deleted row #{sel_row_id}.")
+                        log_activity(st.session_state.username, "SHEET_ROW_DELETE", f"Deleted row #{sel_row_id} on '{selected_page_name}'.")
                         st.success("✅ Selected row delete ho gaya!")
                         st.rerun()
 
-        # Bottom half: Description space on the same page
+        # Bottom half: Description space for the selected page
         st.markdown("---")
-        conn = get_db_connection()
-        c = conn.cursor()
-        c.execute("SELECT description_text FROM sheet_description WHERE id = 1")
-        desc_row = c.fetchone()
-        conn.close()
-        curr_desc = desc_row[0] if desc_row else ""
-
         desc_input = st.text_area(
-            "📝 Description",
+            f"📝 Description ({selected_page_name})",
             value=curr_desc,
             height=140,
             placeholder="Yahan description likhein...",
-            key="page_description_area",
+            key=f"page_description_area_{active_page_id}",
         )
 
-        if st.button("💾 Save Description"):
+        if st.button("💾 Save Description", key=f"save_desc_{active_page_id}"):
             conn = get_db_connection()
             c = conn.cursor()
             c.execute(
                 """
-                UPDATE sheet_description
+                UPDATE custom_pages
                 SET description_text = ?, updated_by = ?, updated_at = CURRENT_TIMESTAMP
-                WHERE id = 1
+                WHERE id = ?
                 """,
-                (desc_input, st.session_state.username),
+                (desc_input, st.session_state.username, active_page_id),
             )
             conn.commit()
             conn.close()
-            log_activity(st.session_state.username, "SHEET_DESC_SAVE", "Saved description.")
+            log_activity(st.session_state.username, "SHEET_DESC_SAVE", f"Saved description on page '{selected_page_name}'.")
             st.success("✅ Description save ho gaya!")
+            st.rerun()
 
     # --- SECTION 1: APP STORAGE WITH SEARCH BAR ---
     elif menu == "📦 App Barcode Storage":
@@ -675,29 +795,7 @@ else:
                         record_download_history(p_name, p_barcode, st.session_state.username)
                 
                 with col_opt2:
-                    img_bytes = single_img_io.getvalue()
-                    encoded_img = base64.b64encode(img_bytes).decode('utf-8')
-
-                    print_script_html = f"""
-                    <html>
-                    <head>
-                        <style>
-                            @page {{ size: 50mm 37mm; margin: 0; }}
-                            body {{ margin: 0; display: flex; justify-content: center; align-items: center; height: 100vh; background: white; }}
-                            img {{ width: 50mm; height: 37mm; object-fit: contain; }}
-                        </style>
-                    </head>
-                    <body>
-                        <img id="print_img" src="data:image/png;base64,{encoded_img}" />
-                        <script>
-                            document.getElementById('print_img').onload = function() {{
-                                window.print();
-                            }};
-                        </script>
-                    </body>
-                    </html>
-                    """
-                    
+                    print_script_html = build_print_html(single_img_io)
                     if st.button("🖨️ Direct Print via Printer", type="primary"):
                         record_download_history(p_name, p_barcode, st.session_state.username)
                         html(print_script_html, height=120)
@@ -858,10 +956,10 @@ else:
             st.markdown("---")
             st.dataframe(logs_df, use_container_width=True)
 
-    # --- SECTION 5: GENERATE & SAVE NEW ---
+    # --- SECTION 5: GENERATE & SAVE NEW (SHOW BARCODE BELOW + REUSE EXISTING ON SAME NAME) ---
     elif menu == "➕ Generate & Save Barcode":
         st.title("➕ Naya Barcode Generate Karein")
-        st.write("Item Name zaroori hai. Price aur Slot/Category optional hain (agar nahi chahiye toh khali chhod dein).")
+        st.write("Item Name zaroori hai. Price aur Slot/Category optional hain. Barcode banate hi niche dikhega, aur pehle se bane naam par wahi barcode aayega.")
 
         with st.form("generate_barcode_form"):
             item_name = st.text_input("Item Name (Required)", placeholder="e.g. 12 no nut - 1 inch")
@@ -875,48 +973,87 @@ else:
             save_btn = st.form_submit_button("Generate & Save to App")
 
             if save_btn:
-                if item_name.strip():
-                    clean_name = item_name.strip()
+                clean_name = item_name.strip()
+                if clean_name:
                     conn = get_db_connection()
                     c = conn.cursor()
                     
-                    c.execute("SELECT barcode_id, price, slot_category FROM inventory WHERE item_name = ?", (clean_name,))
+                    c.execute(
+                        "SELECT item_name, barcode_id, price, slot_category FROM inventory WHERE LOWER(item_name) = LOWER(?)",
+                        (clean_name,),
+                    )
                     existing_item = c.fetchone()
                     
                     if existing_item:
                         conn.close()
-                        st.warning(f"⚠️ Yeh Product Name pehle se inventory mein saved hai! Neeche existing barcode ki details dekhein:")
-                        ex_barcode = existing_item[0]
-                        
-                        try:
-                            ex_img_io = generate_custom_barcode_image(clean_name, ex_barcode)
-                            st.image(ex_img_io, width=320)
-                            if st.download_button(
-                                label="💾 Download Sticker PNG",
-                                data=ex_img_io,
-                                file_name=f"{clean_name}_{ex_barcode}.png",
-                                mime="image/png"
-                            ):
-                                record_download_history(clean_name, ex_barcode, st.session_state.username)
-                        except Exception as e:
-                            st.error(f"Error rendering barcode: {e}")
+                        st.session_state.generated_preview_item = {
+                            "item_name": existing_item[0],
+                            "barcode_id": existing_item[1],
+                            "price": existing_item[2] or "",
+                            "slot_category": existing_item[3] or "",
+                            "is_existing": True,
+                        }
                     else:
                         auto_barcode_id = get_next_barcode_id()
+                        p_clean = price_input.strip()
+                        s_clean = slot_input.strip()
                         try:
                             c.execute(
                                 "INSERT INTO inventory (item_name, barcode_id, price, slot_category) VALUES (?, ?, ?, ?)",
-                                (clean_name, auto_barcode_id, price_input.strip(), slot_input.strip()),
+                                (clean_name, auto_barcode_id, p_clean, s_clean),
                             )
                             conn.commit()
                             conn.close()
                             log_activity(st.session_state.username, "CREATE", f"Created product {clean_name} with ID {auto_barcode_id}.")
-                            st.success(f"✅ Product '{clean_name}' aur Barcode '{auto_barcode_id}' successfully save ho gaya hai!")
-                            st.rerun()
+                            st.session_state.generated_preview_item = {
+                                "item_name": clean_name,
+                                "barcode_id": auto_barcode_id,
+                                "price": p_clean,
+                                "slot_category": s_clean,
+                                "is_existing": False,
+                            }
                         except Exception as e:
                             conn.close()
                             st.error(f"Error: {e}")
                 else:
                     st.warning("Kripya Item Name zaroor bharein.")
+
+        # Show generated or already-existing barcode right below on this page
+        if st.session_state.generated_preview_item:
+            prev = st.session_state.generated_preview_item
+            prev_name = prev["item_name"]
+            prev_barcode = prev["barcode_id"]
+            prev_price = prev["price"]
+            prev_slot = prev["slot_category"]
+
+            st.markdown("---")
+            if prev["is_existing"]:
+                st.info(f"ℹ️ '{prev_name}' ka barcode pehle se bana hua hai — niche wahi barcode show ho raha hai:")
+            else:
+                st.success(f"✅ '{prev_name}' ka naya barcode ban gaya hai — niche preview dekhein:")
+
+            st.write(f"**Item:** {prev_name} | **Barcode ID:** `{prev_barcode}` | **Price:** {prev_price or 'N/A'} | **Slot/Cat:** {prev_slot or 'N/A'}")
+
+            try:
+                gen_img_io = generate_custom_barcode_image(prev_name, prev_barcode)
+                st.image(gen_img_io, width=320)
+
+                col_b1, col_b2 = st.columns(2)
+                with col_b1:
+                    if st.download_button(
+                        label="💾 Download Sticker PNG",
+                        data=gen_img_io,
+                        file_name=f"{prev_name}_{prev_barcode}.png",
+                        mime="image/png",
+                        key=f"gen_dl_{prev_barcode}",
+                    ):
+                        record_download_history(prev_name, prev_barcode, st.session_state.username)
+                with col_b2:
+                    if st.button("🖨️ Direct Print Sticker", type="primary", key=f"gen_pr_{prev_barcode}"):
+                        record_download_history(prev_name, prev_barcode, st.session_state.username)
+                        html(build_print_html(gen_img_io), height=120)
+            except Exception as e:
+                st.error(f"Error rendering barcode: {e}")
 
     # --- SECTION 6: MANAGE & EDIT ---
     elif menu == "⚙️ Manage & Edit Inventory":
