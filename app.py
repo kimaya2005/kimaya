@@ -784,46 +784,101 @@ else:
         st.markdown("---")
 
         conn = get_db_connection()
-        p_df = pd.read_sql_query("SELECT id, item_name, barcode_id FROM inventory ORDER BY id DESC", conn)
+        p_df = pd.read_sql_query("SELECT id, item_name, barcode_id, price, slot_category FROM inventory ORDER BY id DESC", conn)
         conn.close()
 
         if p_df.empty:
             st.info("Print karne ke liye koi products nahi hain.")
         else:
-            item_dict_p = {f"{row['item_name'].upper()} (ID: {row['barcode_id']})": (row['item_name'], row['barcode_id']) for _, row in p_df.iterrows()}
-            selected_p_str = st.selectbox("Select Product", list(item_dict_p.keys()))
-            p_name, p_barcode = item_dict_p[selected_p_str]
+            view_mode = st.radio(
+                "View Mode",
+                ["🎯 Ek Product Chunein", "📋 Sab Barcode Ek Ke Niche Ek"],
+                horizontal=True,
+                key="print_50x37_view_mode",
+            )
+            st.markdown("---")
 
-            st.markdown("### 🏷️ Sticker Preview (50mm x 37mm - Centered Name)")
-            try:
-                single_img_io = generate_custom_barcode_image(p_name, p_barcode)
-                st.image(single_img_io, width=320)
-                
-                st.markdown("---")
-                
-                col_opt1, col_opt2 = st.columns(2)
-                
-                with col_opt1:
-                    if st.download_button(
-                        label="💾 Download to Computer",
-                        data=single_img_io,
-                        file_name=f"Sticker_{p_name}_{p_barcode}.png",
-                        mime="image/png",
-                        type="secondary"
-                    ):
-                        record_download_history(p_name, p_barcode, st.session_state.username)
-                
-                with col_opt2:
-                    print_script_html = build_print_html(single_img_io)
-                    if st.button("🖨️ Direct Print via Printer", type="primary"):
-                        record_download_history(p_name, p_barcode, st.session_state.username)
-                        html(print_script_html, height=120)
-                        st.success("✅ Print dialog trigger ho gaya hai aur history mein record ho gaya hai!")
+            if view_mode == "🎯 Ek Product Chunein":
+                item_dict_p = {f"{row['item_name'].upper()} (ID: {row['barcode_id']})": (row['item_name'], row['barcode_id']) for _, row in p_df.iterrows()}
+                selected_p_str = st.selectbox("Select Product", list(item_dict_p.keys()))
+                p_name, p_barcode = item_dict_p[selected_p_str]
 
-                st.info("💡 **Note:** Product name ab bilkul center mein aayega!")
+                st.markdown("### 🏷️ Sticker Preview (50mm x 37mm - Centered Name)")
+                try:
+                    single_img_io = generate_custom_barcode_image(p_name, p_barcode)
+                    st.image(single_img_io, width=320)
+                    
+                    st.markdown("---")
+                    
+                    col_opt1, col_opt2 = st.columns(2)
+                    
+                    with col_opt1:
+                        if st.download_button(
+                            label="💾 Download to Computer",
+                            data=single_img_io,
+                            file_name=f"Sticker_{p_name}_{p_barcode}.png",
+                            mime="image/png",
+                            type="secondary"
+                        ):
+                            record_download_history(p_name, p_barcode, st.session_state.username)
+                    
+                    with col_opt2:
+                        print_script_html = build_print_html(single_img_io)
+                        if st.button("🖨️ Direct Print via Printer", type="primary"):
+                            record_download_history(p_name, p_barcode, st.session_state.username)
+                            html(print_script_html, height=120)
+                            st.success("✅ Print dialog trigger ho gaya hai aur history mein record ho gaya hai!")
 
-            except Exception as e:
-                st.error(f"Error: {e}")
+                    st.info("💡 **Note:** Product name ab bilkul center mein aayega!")
+
+                except Exception as e:
+                    st.error(f"Error: {e}")
+
+            else:
+                search_print = st.text_input("🔍 Search Barcode / Product...", "", key="search_all_50x37").strip().lower()
+                filtered_p_df = p_df
+                if search_print:
+                    filtered_p_df = p_df[
+                        p_df["item_name"].str.lower().str.contains(search_print, na=False)
+                        | p_df["barcode_id"].astype(str).str.lower().str.contains(search_print, na=False)
+                    ]
+
+                if filtered_p_df.empty:
+                    st.info("Koi matching barcode nahi mila.")
+                else:
+                    for _, row in filtered_p_df.iterrows():
+                        r_id = row["id"]
+                        r_name = row["item_name"]
+                        r_barcode = row["barcode_id"]
+                        r_price = row["price"]
+                        r_slot = row["slot_category"]
+
+                        with st.container():
+                            st.markdown(f"#### 🏷️ {r_name.upper()} (`{r_barcode}`)")
+                            try:
+                                item_img_io = generate_custom_barcode_image(r_name, r_barcode)
+                                st.image(item_img_io, width=320)
+
+                                c_dl, c_pr = st.columns(2)
+                                with c_dl:
+                                    if st.download_button(
+                                        label="💾 Download to Computer",
+                                        data=item_img_io,
+                                        file_name=f"Sticker_{r_name}_{r_barcode}.png",
+                                        mime="image/png",
+                                        key=f"all_50x37_dl_{r_id}",
+                                    ):
+                                        record_download_history(r_name, r_barcode, st.session_state.username)
+                                with c_pr:
+                                    if st.button("🖨️ Direct Print via Printer", type="primary", key=f"all_50x37_pr_{r_id}"):
+                                        record_download_history(r_name, r_barcode, st.session_state.username)
+                                        html(build_print_html(item_img_io), height=120)
+                                        st.success(f"✅ '{r_name}' ka print dialog trigger ho gaya!")
+                            except Exception as e:
+                                st.error(f"Error: {e}")
+
+                            st.caption(f"Price: {r_price or 'N/A'} | Slot/Cat: {r_slot or 'N/A'}")
+                            st.markdown("---")
 
     # --- SECTION 2: APP DOWNLOADED HISTORY ---
     elif menu == "📂 App Downloaded History":
