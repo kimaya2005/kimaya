@@ -81,7 +81,7 @@ def init_db():
     """
     )
 
-    # Excel-style custom sheet rows
+    # Manual Excel-like table rows (no pre-populated dummy rows)
     c.execute(
         """
         CREATE TABLE IF NOT EXISTS custom_sheet_rows (
@@ -133,7 +133,7 @@ def init_db():
     if not c.fetchone():
         c.execute(
             "INSERT INTO sheet_description (id, description_text, updated_by) VALUES (1, ?, ?)",
-            ("", "system"),
+            ("", ""),
         )
 
     conn.commit()
@@ -412,135 +412,146 @@ else:
         else:
             st.info("Export karne ke liye inventory mein koi items nahi hain.")
 
-    # --- SECTION 0.5: EXCEL-LIKE EDITABLE TABLE & DESCRIPTION ---
+    # --- SECTION 0.5: SINGLE PAGE — TOP HALF EXCEL TABLE, BOTTOM DESCRIPTION ---
     elif menu == "📊 Excel Table & Notes":
-        st.title("📊 Excel Table — Product, History, Price & Notes")
-        st.write("Yahan aap Excel ki tarah naya row add kar sakti hain, kisi bhi cell ko double-click karke edit kar sakti hain, aur niche description likh sakti hain.")
-        st.markdown("---")
-
-        # Add new row form
-        st.subheader("➕ Naya Row Table Mein Add Karein")
-        with st.form("add_custom_sheet_row_form", clear_on_submit=True):
-            c1, c2, c3, c4 = st.columns(4)
-            with c1:
-                row_product = st.text_input("Product", placeholder="e.g. Bearing 6204")
-            with c2:
-                row_history = st.text_input("History", placeholder="e.g. Stock aaya / Sale")
-            with c3:
-                row_price = st.text_input("Price", placeholder="e.g. ₹120")
-            with c4:
-                row_extra = st.text_input("Other / Remark", placeholder="e.g. Box 2")
-
-            add_row_btn = st.form_submit_button("➕ Add Row to Table")
-            if add_row_btn:
-                if any([row_product.strip(), row_history.strip(), row_price.strip(), row_extra.strip()]):
-                    conn = get_db_connection()
-                    c = conn.cursor()
-                    c.execute(
-                        """
-                        INSERT INTO custom_sheet_rows (product, history_note, price, extra_info, updated_by)
-                        VALUES (?, ?, ?, ?, ?)
-                        """,
-                        (
-                            row_product.strip(),
-                            row_history.strip(),
-                            row_price.strip(),
-                            row_extra.strip(),
-                            st.session_state.username,
-                        ),
-                    )
-                    conn.commit()
-                    conn.close()
-                    log_activity(st.session_state.username, "SHEET_ADD_ROW", f"Added row for product: {row_product.strip()}")
-                    st.success("✅ Naya row table mein add ho gaya!")
-                    st.rerun()
-                else:
-                    st.warning("Kripya kam se kam ek field bharein.")
-
-        st.markdown("---")
-        st.subheader("📋 Editable Spreadsheet Table")
+        st.title("📊 Excel Sheet & Description")
+        st.caption("Upar half page mein manually row add/edit/delete karein, niche description likhein.")
 
         conn = get_db_connection()
         sheet_df = pd.read_sql_query(
-            "SELECT id, product, history_note, price, extra_info, updated_by, updated_at FROM custom_sheet_rows ORDER BY id ASC",
+            "SELECT id, product, history_note, price, extra_info FROM custom_sheet_rows ORDER BY id ASC",
             conn,
         )
         conn.close()
 
-        if sheet_df.empty:
-            st.info("Abhi table mein koi row nahi hai. Upar se naya row add karein.")
-            edited_df = pd.DataFrame(columns=["id", "product", "history_note", "price", "extra_info", "updated_by", "updated_at"])
-        else:
-            edited_df = st.data_editor(
-                sheet_df,
-                use_container_width=True,
-                num_rows="dynamic",
-                disabled=["id", "updated_by", "updated_at"],
-                column_config={
-                    "id": st.column_config.NumberColumn("ID", width="small"),
-                    "product": st.column_config.TextColumn("Product"),
-                    "history_note": st.column_config.TextColumn("History"),
-                    "price": st.column_config.TextColumn("Price"),
-                    "extra_info": st.column_config.TextColumn("Other / Info"),
-                    "updated_by": st.column_config.TextColumn("Updated By"),
-                    "updated_at": st.column_config.TextColumn("Updated At"),
-                },
-                key="excel_like_table_editor",
+        # Top half: Manual editable Excel-like table
+        edited_df = st.data_editor(
+            sheet_df,
+            use_container_width=True,
+            num_rows="dynamic",
+            height=240,
+            disabled=["id"],
+            column_config={
+                "id": st.column_config.NumberColumn("ID", width="small"),
+                "product": st.column_config.TextColumn("Product"),
+                "history_note": st.column_config.TextColumn("History"),
+                "price": st.column_config.TextColumn("Price"),
+                "extra_info": st.column_config.TextColumn("Other / Info"),
+            },
+            key="manual_excel_table",
+        )
+
+        col_t1, col_t2, col_t3 = st.columns(3)
+        with col_t1:
+            if st.button("💾 Save Table", type="primary"):
+                conn = get_db_connection()
+                c = conn.cursor()
+                c.execute("DELETE FROM custom_sheet_rows")
+                for _, r in edited_df.iterrows():
+                    p_val = str(r.get("product") or "").strip()
+                    h_val = str(r.get("history_note") or "").strip()
+                    pr_val = str(r.get("price") or "").strip()
+                    ex_val = str(r.get("extra_info") or "").strip()
+                    if any([p_val, h_val, pr_val, ex_val]):
+                        c.execute(
+                            """
+                            INSERT INTO custom_sheet_rows (product, history_note, price, extra_info, updated_by)
+                            VALUES (?, ?, ?, ?, ?)
+                            """,
+                            (p_val, h_val, pr_val, ex_val, st.session_state.username),
+                        )
+                conn.commit()
+                conn.close()
+                log_activity(st.session_state.username, "SHEET_SAVE", "Saved manual table edits.")
+                st.success("✅ Table save ho gaya!")
+                st.rerun()
+
+        with col_t2:
+            sheet_csv = edited_df.to_csv(index=False).encode("utf-8")
+            st.download_button(
+                label="📥 Download CSV",
+                data=sheet_csv,
+                file_name="raut_manual_table.csv",
+                mime="text/csv",
             )
 
-            col_s1, col_s2 = st.columns(2)
-            with col_s1:
-                if st.button("💾 Save Table Edits", type="primary"):
-                    conn = get_db_connection()
-                    c = conn.cursor()
-                    c.execute("DELETE FROM custom_sheet_rows")
-                    for _, r in edited_df.iterrows():
-                        p_val = str(r.get("product") or "").strip()
-                        h_val = str(r.get("history_note") or "").strip()
-                        pr_val = str(r.get("price") or "").strip()
-                        ex_val = str(r.get("extra_info") or "").strip()
-                        if any([p_val, h_val, pr_val, ex_val]):
-                            c.execute(
-                                """
-                                INSERT INTO custom_sheet_rows (product, history_note, price, extra_info, updated_by)
-                                VALUES (?, ?, ?, ?, ?)
-                                """,
-                                (p_val, h_val, pr_val, ex_val, st.session_state.username),
-                            )
-                    conn.commit()
-                    conn.close()
-                    log_activity(st.session_state.username, "SHEET_SAVE", "Saved changes in Excel-like table.")
-                    st.success("✅ Table ke saare changes save ho gaye!")
-                    st.rerun()
+        with col_t3:
+            if st.button("🗑️ Clear All Rows"):
+                conn = get_db_connection()
+                c = conn.cursor()
+                c.execute("DELETE FROM custom_sheet_rows")
+                conn.commit()
+                conn.close()
+                log_activity(st.session_state.username, "SHEET_CLEAR", "Cleared all rows from manual table.")
+                st.success("✅ Saare rows delete ho gaye!")
+                st.rerun()
 
-            with col_s2:
-                sheet_csv = edited_df.to_csv(index=False).encode("utf-8")
-                st.download_button(
-                    label="📥 Export Table as CSV",
-                    data=sheet_csv,
-                    file_name="raut_excel_table.csv",
-                    mime="text/csv",
-                )
+        # Dedicated Edit / Delete single row option
+        if not sheet_df.empty:
+            with st.expander("✏️ Edit or Delete Specific Row"):
+                row_options = {
+                    f"Row #{int(r['id'])} — {r['product'] or '(Empty)'} | {r['price'] or '-'}": int(r["id"])
+                    for _, r in sheet_df.iterrows()
+                }
+                sel_label = st.selectbox("Select Row", list(row_options.keys()), key="sel_sheet_row")
+                sel_row_id = row_options[sel_label]
+                curr_row = sheet_df[sheet_df["id"] == sel_row_id].iloc[0]
 
-        # Description section at the bottom of the same page
+                e1, e2, e3, e4 = st.columns(4)
+                with e1:
+                    ed_prod = st.text_input("Product", value=str(curr_row["product"] or ""), key="ed_prod")
+                with e2:
+                    ed_hist = st.text_input("History", value=str(curr_row["history_note"] or ""), key="ed_hist")
+                with e3:
+                    ed_price = st.text_input("Price", value=str(curr_row["price"] or ""), key="ed_price")
+                with e4:
+                    ed_extra = st.text_input("Other / Info", value=str(curr_row["extra_info"] or ""), key="ed_extra")
+
+                b_upd, b_del = st.columns(2)
+                with b_upd:
+                    if st.button("✏️ Update Selected Row"):
+                        conn = get_db_connection()
+                        c = conn.cursor()
+                        c.execute(
+                            """
+                            UPDATE custom_sheet_rows
+                            SET product = ?, history_note = ?, price = ?, extra_info = ?, updated_by = ?, updated_at = CURRENT_TIMESTAMP
+                            WHERE id = ?
+                            """,
+                            (ed_prod.strip(), ed_hist.strip(), ed_price.strip(), ed_extra.strip(), st.session_state.username, sel_row_id),
+                        )
+                        conn.commit()
+                        conn.close()
+                        log_activity(st.session_state.username, "SHEET_ROW_UPDATE", f"Updated row #{sel_row_id}.")
+                        st.success("✅ Row update ho gaya!")
+                        st.rerun()
+
+                with b_del:
+                    if st.button("❌ Delete Selected Row"):
+                        conn = get_db_connection()
+                        c = conn.cursor()
+                        c.execute("DELETE FROM custom_sheet_rows WHERE id = ?", (sel_row_id,))
+                        conn.commit()
+                        conn.close()
+                        log_activity(st.session_state.username, "SHEET_ROW_DELETE", f"Deleted row #{sel_row_id}.")
+                        st.success("✅ Selected row delete ho gaya!")
+                        st.rerun()
+
+        # Bottom half: Description space on the same page
         st.markdown("---")
-        st.subheader("📝 Page Description / Notes")
-
         conn = get_db_connection()
         c = conn.cursor()
-        c.execute("SELECT description_text, updated_by, updated_at FROM sheet_description WHERE id = 1")
+        c.execute("SELECT description_text FROM sheet_description WHERE id = 1")
         desc_row = c.fetchone()
         conn.close()
-
         curr_desc = desc_row[0] if desc_row else ""
-        desc_by = desc_row[1] if desc_row else ""
-        desc_at = desc_row[2] if desc_row else ""
 
         desc_input = st.text_area(
-            "Yahan product history, price note ya koi bhi description likhein:",
+            "📝 Description",
             value=curr_desc,
-            height=150,
-            placeholder="e.g. Aaj ke rate, supplier detail, ya stock history ka note yahan likhein...",
+            height=140,
+            placeholder="Yahan description likhein...",
+            key="page_description_area",
         )
 
         if st.button("💾 Save Description"):
@@ -556,12 +567,8 @@ else:
             )
             conn.commit()
             conn.close()
-            log_activity(st.session_state.username, "SHEET_DESC_SAVE", "Updated page description on Excel Table page.")
+            log_activity(st.session_state.username, "SHEET_DESC_SAVE", "Saved description.")
             st.success("✅ Description save ho gaya!")
-            st.rerun()
-
-        if curr_desc or (desc_by and desc_by != "system"):
-            st.caption(f"Last saved by: **{desc_by}** at {desc_at}")
 
     # --- SECTION 1: APP STORAGE WITH SEARCH BAR ---
     elif menu == "📦 App Barcode Storage":
