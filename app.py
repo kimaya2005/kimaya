@@ -218,20 +218,21 @@ def record_download_history(item_name, barcode_id, username):
         pass
 
 def inject_print_css():
-    """Allows Ctrl+P on the main Streamlit page to print cleanly without sidebar or extra UI."""
+    """Hides Streamlit chrome/controls during Ctrl+P so the sticker sheet prints cleanly."""
     st.markdown(
         """
         <style>
         @media print {
             @page {
                 size: A4 portrait;
-                margin: 8mm;
+                margin: 0;
             }
             [data-testid="stSidebar"],
             [data-testid="stHeader"],
             [data-testid="stToolbar"],
             [data-testid="stDecoration"],
             [data-testid="stStatusWidget"],
+            .stAlert,
             .stButton,
             .stDownloadButton,
             .stTextInput,
@@ -242,13 +243,25 @@ def inject_print_css():
                 display: none !important;
             }
             .main .block-container {
-                max-width: 100% !important;
+                max-width: 210mm !important;
+                width: 210mm !important;
                 padding: 0 !important;
                 margin: 0 !important;
             }
+            .element-container:has(> .stHtml),
+            .stHtml {
+                width: 210mm !important;
+                margin: 0 !important;
+                padding: 0 !important;
+            }
             iframe {
-                page-break-inside: avoid;
-                break-inside: avoid;
+                width: 210mm !important;
+                height: 294mm !important;
+                max-height: 294mm !important;
+                page-break-inside: avoid !important;
+                break-inside: avoid !important;
+                page-break-after: avoid !important;
+                break-after: avoid !important;
             }
         }
         </style>
@@ -681,9 +694,13 @@ def render_interactive_8_sheet_and_print(sticker_item, enabled_box_indices):
                 size: A4 portrait;
                 margin: 0;
             }}
-            body {{
-                margin: 0;
-                padding: 0;
+            html, body {{
+                margin: 0 !important;
+                padding: 0 !important;
+                width: 210mm !important;
+                height: 294mm !important;
+                overflow: hidden !important;
+                background: #ffffff !important;
             }}
             .top-bar {{
                 display: none !important;
@@ -696,6 +713,7 @@ def render_interactive_8_sheet_and_print(sticker_item, enabled_box_indices):
                 margin: 8.5mm 0 0 0 !important;
                 border: none !important;
                 box-shadow: none !important;
+                border-radius: 0 !important;
                 grid-template-columns: repeat(2, 105mm) !important;
                 grid-template-rows: repeat(4, 70mm) !important;
             }}
@@ -1133,7 +1151,7 @@ def render_interactive_24_sheet_and_print(items_catalog, box_item_map, enabled_b
     """
     Renders an interactive 24-box (3x8) A4 sticker sheet where clicking ANY box (#1 to #24)
     immediately places the active sticker into that box (or removes it if already active),
-    and supports both the Print button and Ctrl+P.
+    and supports both the Print button and Ctrl+P cleanly on 1 A4 page.
     """
     catalog_json = json.dumps(items_catalog)
     box_map_json = json.dumps(box_item_map)
@@ -1276,9 +1294,13 @@ def render_interactive_24_sheet_and_print(items_catalog, box_item_map, enabled_b
                 size: A4 portrait;
                 margin: 0;
             }}
-            body {{
-                margin: 0;
-                padding: 0;
+            html, body {{
+                margin: 0 !important;
+                padding: 0 !important;
+                width: 210mm !important;
+                height: 294mm !important;
+                overflow: hidden !important;
+                background: #ffffff !important;
             }}
             .brush-bar, .top-bar {{
                 display: none !important;
@@ -1292,6 +1314,7 @@ def render_interactive_24_sheet_and_print(items_catalog, box_item_map, enabled_b
                 padding: 0 !important;
                 border: none !important;
                 box-shadow: none !important;
+                border-radius: 0 !important;
                 grid-template-columns: repeat(3, 63.5mm) !important;
                 grid-template-rows: repeat(8, 33.75mm) !important;
             }}
@@ -2278,7 +2301,7 @@ else:
                         default_brush_key=active_key,
                     )
 
-                    st.info("💡 **Dono Options Available:** Aap **Print Selected (1 Page)** button bhi daba sakte hain ya seedha **`Ctrl + P`** bhi kar sakte hain — dono se clean sheet print hogi.")
+                    st.info("💡 **Zero Waste Tip:** Agar `#1` se `#6` pehle print ho chuke hain, toh **Clear Boxes** dabayein aur seedha **`#7`, `#8`, `#9`...** par click karein — `#1` se `#6` blank rahenge aur wahi half page reuse ho jayega.")
 
                 else:
                     st.subheader("📋 Sab Saved Barcodes (All Products)")
@@ -2750,7 +2773,7 @@ else:
                         key=f"dl_vf_html_{sel_v_id}",
                     )
 
-                st.caption("Kisi bhi box (#1 to #8) par seedha click karke sticker lagayein ya hatayein, phir **Print Selected (1 Page)** ya **`Ctrl + P`** dabayein.")
+                st.caption("Kisi bhi box (#1 to #8) par seedha click karke sticker lagayein ya hatayein, phir **Print Selected (1 Page)** dabayein.")
                 render_interactive_8_sheet_and_print(
                     sticker_item=sel_v_item,
                     enabled_box_indices=[1],
