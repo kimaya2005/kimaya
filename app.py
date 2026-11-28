@@ -45,6 +45,23 @@ def init_db():
 
     c.execute(
         """
+        CREATE TABLE IF NOT EXISTS vendor_barcodes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            barcode_no TEXT NOT NULL,
+            sku_code TEXT DEFAULT '',
+            batch_code TEXT DEFAULT '',
+            net_qty TEXT DEFAULT '',
+            mrp_text TEXT DEFAULT '',
+            serial_code TEXT DEFAULT '',
+            created_by TEXT DEFAULT '',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """
+    )
+
+    c.execute(
+        """
         CREATE TABLE IF NOT EXISTS trash_bin (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             original_id INTEGER,
@@ -1584,12 +1601,12 @@ else:
                 "📊 Excel Sheet & Notes",
                 "📦 App Barcode Storage", 
                 "🖨️ Print 24-Sticker A4 (63.5x33.9mm)",
-                "🏷️ Custom / Vendor Barcode (105x70mm)",
+                "➕ Generate & Save Barcode", 
+                "⚙️ Manage & Edit Inventory",
+                "🏷️ Vendor Barcode Folder (105x70mm)",
                 "📂 App Downloaded History", 
                 "♻️ Trash / Bin Folder", 
                 "📜 Activity Audit Logs",
-                "➕ Generate & Save Barcode", 
-                "⚙️ Manage & Edit Inventory", 
                 "⚙️ Manage Employee Access"
             ]
         )
@@ -1601,11 +1618,11 @@ else:
                 "📊 Excel Sheet & Notes",
                 "📦 App Barcode Storage", 
                 "🖨️ Print 24-Sticker A4 (63.5x33.9mm)",
-                "🏷️ Custom / Vendor Barcode (105x70mm)",
-                "📂 App Downloaded History", 
-                "♻️ Trash / Bin Folder", 
                 "➕ Generate & Save Barcode", 
-                "⚙️ Manage & Edit Inventory"
+                "⚙️ Manage & Edit Inventory",
+                "🏷️ Vendor Barcode Folder (105x70mm)",
+                "📂 App Downloaded History", 
+                "♻️ Trash / Bin Folder"
             ]
         )
 
@@ -1620,6 +1637,9 @@ else:
         c.execute("SELECT COUNT(*) FROM inventory")
         total_inv = c.fetchone()[0]
 
+        c.execute("SELECT COUNT(*) FROM vendor_barcodes")
+        total_vendor = c.fetchone()[0]
+
         c.execute("SELECT COUNT(*) FROM trash_bin")
         total_trash = c.fetchone()[0]
 
@@ -1627,12 +1647,14 @@ else:
         total_history = c.fetchone()[0]
         conn.close()
 
-        col_d1, col_d2, col_d3 = st.columns(3)
+        col_d1, col_d2, col_d3, col_d4 = st.columns(4)
         with col_d1:
-            st.metric(label="📦 Active Products", value=total_inv)
+            st.metric(label="📦 App Products", value=total_inv)
         with col_d2:
-            st.metric(label="♻️ Items in Trash", value=total_trash)
+            st.metric(label="🏷️ Saved Vendor Barcodes", value=total_vendor)
         with col_d3:
+            st.metric(label="♻️ Items in Trash", value=total_trash)
+        with col_d4:
             st.metric(label="📥 Downloaded Records", value=total_history)
 
         st.markdown("---")
@@ -2144,101 +2166,327 @@ else:
                         })
                     render_clickable_barcode_list(clickable_all, key_prefix="all_stickers_click")
 
-    # --- SECTION 1.8: CUSTOM / VENDOR MANUAL BARCODE PANEL (105mm x 70mm, A4-8) ---
-    elif menu == "🏷️ Custom / Vendor Barcode (105x70mm)":
-        st.title("🏷️ Custom / Vendor Barcode Panel (105mm × 70mm — A4-8)")
-        st.write("Dusri company ke product ke liye barcode number manually enter karein. Baaki sab details optional hain.")
+    # --- SECTION 1.8: VENDOR BARCODE FOLDER (105mm x 70mm, A4-8) ---
+    elif menu == "🏷️ Vendor Barcode Folder (105x70mm)":
+        st.title("🏷️ Vendor Barcode Folder (105mm × 70mm — A4-8)")
+        st.write("Dusri company ke custom/vendor barcodes yahin **Save, Print, Edit aur Delete** karein — normal inventory se bilkul alag.")
         st.markdown("---")
 
-        with st.form("vendor_custom_barcode_form"):
-            v_barcode = st.text_input(
-                "Barcode Number (Manual Entry)",
-                placeholder="e.g. 8905253127653",
-            )
-            c1, c2 = st.columns(2)
-            with c1:
-                v_sku = st.text_input("Model / SKU Code (Optional)", placeholder="e.g. NN8976SL10W")
-                v_batch = st.text_input("Batch / Lot Code (Optional)", placeholder="e.g. 8DJ720")
-            with c2:
-                v_net = st.text_input("Net Qty (Optional)", placeholder="e.g. Net : 01 N")
-                v_mrp = st.text_input("MRP / Price Info (Optional)", placeholder="e.g. MRP Rs. 775.00 (Incl.of all taxes)")
-            v_serial = st.text_input("Serial / Extra Code (Optional)", placeholder="e.g. w 1801AJWH302983JX.T")
+        tab_create, tab_folder, tab_edit_del = st.tabs([
+            "➕ Create & Save Custom Barcode",
+            "📁 Saved Vendor Folder & Print",
+            "✏️ Edit / Delete Saved Barcode",
+        ])
 
-            gen_vendor_btn = st.form_submit_button("Generate Custom Sticker (105×70mm)")
+        with tab_create:
+            with st.form("vendor_custom_barcode_form"):
+                v_barcode = st.text_input(
+                    "Barcode Number (Manual Entry)",
+                    placeholder="e.g. 8905253127653",
+                )
+                c1, c2 = st.columns(2)
+                with c1:
+                    v_sku = st.text_input("Model / SKU Code (Optional)", placeholder="e.g. NN8976SL10W")
+                    v_batch = st.text_input("Batch / Lot Code (Optional)", placeholder="e.g. 8DJ720")
+                with c2:
+                    v_net = st.text_input("Net Qty (Optional)", placeholder="e.g. Net : 01 N")
+                    v_mrp = st.text_input("MRP / Price Info (Optional)", placeholder="e.g. MRP Rs. 775.00 (Incl.of all taxes)")
+                v_serial = st.text_input("Serial / Extra Code (Optional)", placeholder="e.g. w 1801AJWH302983JX.T")
 
-            if gen_vendor_btn:
-                clean_bc = v_barcode.strip()
-                if not clean_bc:
-                    clean_bc = get_next_barcode_id()
+                b_col1, b_col2 = st.columns(2)
+                with b_col1:
+                    save_vendor_btn = st.form_submit_button("💾 Save to Vendor Folder", type="primary")
+                with b_col2:
+                    preview_only_btn = st.form_submit_button("👁️ Preview Only (Without Saving)")
 
-                try:
-                    sticker_io = generate_vendor_custom_sticker(
-                        barcode_no=clean_bc,
-                        sku_code=v_sku,
-                        batch_code=v_batch,
-                        net_qty=v_net,
-                        mrp_text=v_mrp,
-                        serial_code=v_serial,
+                if save_vendor_btn or preview_only_btn:
+                    clean_bc = v_barcode.strip() or get_next_barcode_id()
+                    try:
+                        sticker_io = generate_vendor_custom_sticker(
+                            barcode_no=clean_bc,
+                            sku_code=v_sku,
+                            batch_code=v_batch,
+                            net_qty=v_net,
+                            mrp_text=v_mrp,
+                            serial_code=v_serial,
+                        )
+                        label_title = v_sku.strip() or clean_bc
+                        b64_str = base64.b64encode(sticker_io.getvalue()).decode("utf-8")
+
+                        saved_id = None
+                        if save_vendor_btn:
+                            conn = get_db_connection()
+                            c = conn.cursor()
+                            c.execute(
+                                """
+                                INSERT INTO vendor_barcodes
+                                (barcode_no, sku_code, batch_code, net_qty, mrp_text, serial_code, created_by, updated_at)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                                """,
+                                (
+                                    clean_bc,
+                                    v_sku.strip(),
+                                    v_batch.strip(),
+                                    v_net.strip(),
+                                    v_mrp.strip(),
+                                    v_serial.strip(),
+                                    st.session_state.username,
+                                ),
+                            )
+                            saved_id = c.lastrowid
+                            conn.commit()
+                            conn.close()
+                            log_activity(
+                                st.session_state.username,
+                                "SAVE_VENDOR_BARCODE",
+                                f"Saved 105x70mm vendor barcode #{saved_id}: {clean_bc} ({label_title}).",
+                            )
+                            st.success(f"✅ Vendor Folder mein save ho gaya! (Record ID #{saved_id})")
+
+                        st.session_state.vendor_sticker_preview = {
+                            "id": saved_id,
+                            "title": label_title,
+                            "barcode": clean_bc,
+                            "b64": b64_str,
+                        }
+                    except Exception as e:
+                        st.error(f"Barcode generate/save karne mein error aaya: {e}")
+
+            if st.session_state.vendor_sticker_preview:
+                vp = st.session_state.vendor_sticker_preview
+                st.markdown("---")
+                st.subheader("🖨️ Sticker Preview (105mm × 70mm)")
+                render_clickable_vendor_sticker(
+                    {
+                        "name": vp["title"],
+                        "barcode": vp["barcode"],
+                        "b64": vp["b64"],
+                    },
+                    key_prefix="vendor_custom_preview",
+                )
+
+                col_v_dl1, col_v_dl2 = st.columns(2)
+                with col_v_dl1:
+                    st.download_button(
+                        label="💾 Download Sticker PNG (105×70mm)",
+                        data=base64.b64decode(vp["b64"]),
+                        file_name=f"vendor_105x70_{vp['barcode']}.png",
+                        mime="image/png",
+                        key="dl_vendor_sticker_png",
                     )
-                    label_title = v_sku.strip() or clean_bc
-                    st.session_state.vendor_sticker_preview = {
-                        "title": label_title,
-                        "barcode": clean_bc,
-                        "b64": base64.b64encode(sticker_io.getvalue()).decode("utf-8"),
+                with col_v_dl2:
+                    full_8_html = build_a4_8_grid_html([vp] * 8, auto_print=False)
+                    st.download_button(
+                        label="📄 Download 8-Sticker A4 Print File (.html)",
+                        data=full_8_html.encode("utf-8"),
+                        file_name=f"A4_8_Vendor_105x70_{vp['barcode']}.html",
+                        mime="text/html",
+                        key="dl_vendor_a4_8_html",
+                    )
+
+        with tab_folder:
+            st.subheader("📁 Saved Vendor Barcodes Folder")
+            v_search = st.text_input(
+                "🔍 Search Vendor Folder (Barcode No, SKU, Batch, MRP, Serial)...",
+                "",
+                key="vendor_folder_search",
+            ).strip().lower()
+
+            conn = get_db_connection()
+            v_df = pd.read_sql_query(
+                """
+                SELECT id, barcode_no, sku_code, batch_code, net_qty, mrp_text, serial_code, created_by, updated_at
+                FROM vendor_barcodes
+                ORDER BY id DESC
+                """,
+                conn,
+            )
+            conn.close()
+
+            if v_search:
+                v_df = v_df[
+                    v_df["barcode_no"].astype(str).str.lower().str.contains(v_search, na=False)
+                    | v_df["sku_code"].astype(str).str.lower().str.contains(v_search, na=False)
+                    | v_df["batch_code"].astype(str).str.lower().str.contains(v_search, na=False)
+                    | v_df["mrp_text"].astype(str).str.lower().str.contains(v_search, na=False)
+                    | v_df["serial_code"].astype(str).str.lower().str.contains(v_search, na=False)
+                ]
+
+            if v_df.empty:
+                st.info("Vendor folder mein abhi koi saved barcode nahi hai. Pehle tab se save karein.")
+            else:
+                v_options = {}
+                v_items_by_id = {}
+                for _, r in v_df.iterrows():
+                    rid = int(r["id"])
+                    bc_val = str(r["barcode_no"])
+                    sku_val = str(r["sku_code"] or "")
+                    batch_val = str(r["batch_code"] or "")
+                    net_val = str(r["net_qty"] or "")
+                    mrp_val = str(r["mrp_text"] or "")
+                    ser_val = str(r["serial_code"] or "")
+
+                    s_io = generate_vendor_custom_sticker(
+                        barcode_no=bc_val,
+                        sku_code=sku_val,
+                        batch_code=batch_val,
+                        net_qty=net_val,
+                        mrp_text=mrp_val,
+                        serial_code=ser_val,
+                    )
+                    b64_val = base64.b64encode(s_io.getvalue()).decode("utf-8")
+                    disp_title = sku_val or bc_val
+                    label_str = f"#{rid} | {disp_title} (Barcode: {bc_val})"
+                    v_options[label_str] = rid
+                    v_items_by_id[rid] = {
+                        "id": rid,
+                        "name": disp_title,
+                        "barcode": bc_val,
+                        "sku": sku_val,
+                        "batch": batch_val,
+                        "net": net_val,
+                        "mrp": mrp_val,
+                        "serial": ser_val,
+                        "b64": b64_val,
                     }
-                    log_activity(
-                        st.session_state.username,
-                        "CUSTOM_VENDOR_BARCODE",
-                        f"Generated 105x70mm custom vendor sticker for barcode {clean_bc} ({label_title}).",
+
+                sel_v_label = st.selectbox(
+                    "Select Saved Vendor Barcode for A4 - 8 Sheet (105mm × 70mm)",
+                    list(v_options.keys()),
+                    key="vendor_folder_select",
+                )
+                sel_v_id = v_options[sel_v_label]
+                sel_v_item = v_items_by_id[sel_v_id]
+
+                st.write(
+                    f"**Barcode:** `{sel_v_item['barcode']}` | **SKU:** {sel_v_item['sku'] or '-'} | "
+                    f"**Batch:** {sel_v_item['batch'] or '-'} | **Net Qty:** {sel_v_item['net'] or '-'} | "
+                    f"**MRP:** {sel_v_item['mrp'] or '-'}"
+                )
+
+                col_f1, col_f2 = st.columns(2)
+                with col_f1:
+                    st.download_button(
+                        label="💾 Download PNG (105×70mm)",
+                        data=base64.b64decode(sel_v_item["b64"]),
+                        file_name=f"vendor_{sel_v_item['barcode']}_{sel_v_id}.png",
+                        mime="image/png",
+                        key=f"dl_vf_png_{sel_v_id}",
                     )
-                except Exception as e:
-                    st.error(f"Barcode generate karne mein error aaya: {e}")
+                with col_f2:
+                    vf_8_html = build_a4_8_grid_html([sel_v_item] * 8, auto_print=False)
+                    st.download_button(
+                        label="📄 Download 8-Sticker A4 Print File (.html)",
+                        data=vf_8_html.encode("utf-8"),
+                        file_name=f"A4_8_Vendor_{sel_v_item['barcode']}_{sel_v_id}.html",
+                        mime="text/html",
+                        key=f"dl_vf_html_{sel_v_id}",
+                    )
 
-        if st.session_state.vendor_sticker_preview:
-            vp = st.session_state.vendor_sticker_preview
-            st.markdown("---")
-            st.subheader("🖨️ Generated Sticker (Click karke print karein)")
-            render_clickable_vendor_sticker(
-                {
-                    "name": vp["title"],
-                    "barcode": vp["barcode"],
-                    "b64": vp["b64"],
-                },
-                key_prefix="vendor_custom_preview",
-            )
-            st.markdown("<div style='height: 16px;'></div>", unsafe_allow_html=True)
-
-            col_v_dl1, col_v_dl2 = st.columns(2)
-            with col_v_dl1:
-                st.download_button(
-                    label="💾 Download Sticker PNG (105×70mm)",
-                    data=base64.b64decode(vp["b64"]),
-                    file_name=f"custom_105x70_{vp['barcode']}.png",
-                    mime="image/png",
-                    key="dl_vendor_sticker_png",
+                st.caption("Kisi bhi box (#1 to #8) par click karke ON/OFF karein, phir **Print Selected (1 Page)** dabayein.")
+                render_interactive_8_sheet_and_print(
+                    sticker_item=sel_v_item,
+                    enabled_box_indices=[1],
                 )
 
-            with col_v_dl2:
-                full_8_html = build_a4_8_grid_html([vp] * 8, auto_print=False)
-                st.download_button(
-                    label="📄 Download 8-Sticker A4 Print File (.html)",
-                    data=full_8_html.encode("utf-8"),
-                    file_name=f"A4_8_Stickers_105x70_{vp['barcode']}.html",
-                    mime="text/html",
-                    key="dl_vendor_a4_8_html",
-                )
+                st.markdown("---")
+                st.subheader("🗂️ Sab Saved Vendor Barcodes (Click karke print karein)")
+                for rid_item, it_data in v_items_by_id.items():
+                    st.markdown(f"**#{rid_item} — {it_data['name']}** (`{it_data['barcode']}`)")
+                    render_clickable_vendor_sticker(it_data, key_prefix=f"vf_card_{rid_item}")
 
-            st.markdown("---")
-            st.subheader("📋 A4 - 8 Sheet Preview (105mm × 70mm — 2×4 Grid)")
-            st.caption("Kisi bhi box (#1 to #8) par click karke ON/OFF karein, phir **Print Selected (1 Page)** dabayein.")
-            render_interactive_8_sheet_and_print(
-                sticker_item={
-                    "name": vp["title"],
-                    "barcode": vp["barcode"],
-                    "b64": vp["b64"],
-                },
-                enabled_box_indices=[1],
+        with tab_edit_del:
+            st.subheader("✏️ Edit or Delete Saved Vendor Barcode")
+            conn = get_db_connection()
+            ed_v_df = pd.read_sql_query(
+                """
+                SELECT id, barcode_no, sku_code, batch_code, net_qty, mrp_text, serial_code
+                FROM vendor_barcodes
+                ORDER BY id DESC
+                """,
+                conn,
             )
+            conn.close()
+
+            if ed_v_df.empty:
+                st.info("Edit ya delete karne ke liye vendor folder mein koi record nahi hai.")
+            else:
+                ed_map = {
+                    f"#{int(r['id'])} — {r['sku_code'] or r['barcode_no']} ({r['barcode_no']})": int(r["id"])
+                    for _, r in ed_v_df.iterrows()
+                }
+                chosen_ed_label = st.selectbox(
+                    "Choose Vendor Barcode to Edit or Delete",
+                    list(ed_map.keys()),
+                    key="vendor_edit_selector",
+                )
+                chosen_ed_id = ed_map[chosen_ed_label]
+                curr_v = ed_v_df[ed_v_df["id"] == chosen_ed_id].iloc[0]
+
+                with st.form(f"edit_vendor_barcode_form_{chosen_ed_id}"):
+                    upd_bc = st.text_input("Barcode Number", value=str(curr_v["barcode_no"] or ""))
+                    uc1, uc2 = st.columns(2)
+                    with uc1:
+                        upd_sku = st.text_input("Model / SKU Code", value=str(curr_v["sku_code"] or ""))
+                        upd_batch = st.text_input("Batch / Lot Code", value=str(curr_v["batch_code"] or ""))
+                    with uc2:
+                        upd_net = st.text_input("Net Qty", value=str(curr_v["net_qty"] or ""))
+                        upd_mrp = st.text_input("MRP / Price Info", value=str(curr_v["mrp_text"] or ""))
+                    upd_ser = st.text_input("Serial / Extra Code", value=str(curr_v["serial_code"] or ""))
+
+                    u_btn, d_btn = st.columns(2)
+                    with u_btn:
+                        save_upd_v = st.form_submit_button("💾 Save Updated Barcode", type="primary")
+                    with d_btn:
+                        del_v = st.form_submit_button("🗑️ Delete Vendor Barcode")
+
+                    if save_upd_v:
+                        final_bc = upd_bc.strip()
+                        if not final_bc:
+                            st.warning("Barcode number khali nahi ho sakta.")
+                        else:
+                            conn = get_db_connection()
+                            c = conn.cursor()
+                            c.execute(
+                                """
+                                UPDATE vendor_barcodes
+                                SET barcode_no = ?, sku_code = ?, batch_code = ?, net_qty = ?,
+                                    mrp_text = ?, serial_code = ?, updated_at = CURRENT_TIMESTAMP
+                                WHERE id = ?
+                                """,
+                                (
+                                    final_bc,
+                                    upd_sku.strip(),
+                                    upd_batch.strip(),
+                                    upd_net.strip(),
+                                    upd_mrp.strip(),
+                                    upd_ser.strip(),
+                                    chosen_ed_id,
+                                ),
+                            )
+                            conn.commit()
+                            conn.close()
+                            log_activity(
+                                st.session_state.username,
+                                "UPDATE_VENDOR_BARCODE",
+                                f"Updated vendor barcode #{chosen_ed_id} ({final_bc}).",
+                            )
+                            st.success("✅ Vendor barcode update ho gaya!")
+                            st.rerun()
+
+                    if del_v:
+                        conn = get_db_connection()
+                        c = conn.cursor()
+                        c.execute("DELETE FROM vendor_barcodes WHERE id = ?", (chosen_ed_id,))
+                        conn.commit()
+                        conn.close()
+                        log_activity(
+                            st.session_state.username,
+                            "DELETE_VENDOR_BARCODE",
+                            f"Deleted vendor barcode #{chosen_ed_id} ({curr_v['barcode_no']}).",
+                        )
+                        st.success("🗑️ Vendor barcode delete ho gaya!")
+                        st.rerun()
 
     # --- SECTION 2: APP DOWNLOADED HISTORY ---
     elif menu == "📂 App Downloaded History":
