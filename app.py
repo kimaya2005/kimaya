@@ -228,58 +228,67 @@ def _load_font(size_px, bold=True):
     except TypeError:
         return ImageFont.load_default()
 
-# Helper function: Clean professional sticker sized for 63.5mm x 33.9mm (24 stickers per A4 sheet, 3x8)
-def generate_custom_barcode_image(item_name, barcode_text):
-    scale = 4
-
+def _render_scannable_bars_only(barcode_text, scale=4):
+    """Generates clean, high-contrast Code128 bars without overlapping text."""
     writer_options = {
-        "module_width": 0.34 * scale,
-        "module_height": 12.5 * scale,
+        "module_width": 0.36 * scale,
+        "module_height": 14.0 * scale,
         "quiet_zone": 5 * scale,
-        "write_text": True,
-        "font_size": 12 * scale,
-        "text_distance": 3.5 * scale,
+        "write_text": False,
     }
-
     rv = BytesIO()
     Code128(str(barcode_text), writer=ImageWriter()).write(rv, options=writer_options)
     rv.seek(0)
+    return Image.open(rv).convert("RGB")
 
-    barcode_img = Image.open(rv)
-    bw, bh = barcode_img.size
-
+# Helper function: Clean professional sticker sized for 63.5mm x 33.9mm (24 stickers per A4 sheet, 3x8)
+def generate_custom_barcode_image(item_name, barcode_text):
+    scale = 4
     target_w = 635 * scale
     target_h = 339 * scale
     sticker_img = Image.new("RGB", (target_w, target_h), "white")
     draw = ImageDraw.Draw(sticker_img)
 
-    font_title = _load_font(28 * scale, bold=True)
+    font_title = _load_font(26 * scale, bold=True)
+    font_code = _load_font(18 * scale, bold=True)
 
     text_to_draw = f"{item_name.upper()}"
     bbox = draw.textbbox((0, 0), text_to_draw, font=font_title)
     text_w = bbox[2] - bbox[0]
     if text_w > target_w - 36 * scale:
-        text_to_draw = text_to_draw[:28] + "..."
+        text_to_draw = text_to_draw[:26] + "..."
         bbox = draw.textbbox((0, 0), text_to_draw, font=font_title)
         text_w = bbox[2] - bbox[0]
 
-    text_x = max(8 * scale, (target_w - text_w) // 2)
-    text_y = 14 * scale
+    text_x = max(12 * scale, (target_w - text_w) // 2)
+    text_y = 12 * scale
     draw.text((text_x, text_y), text_to_draw, fill="#111111", font=font_title)
 
-    line_y = 54 * scale
+    line_y = 50 * scale
     draw.line([(20 * scale, line_y), (target_w - 20 * scale, line_y)], fill="#222222", width=2 * scale)
 
-    avail_h = target_h - (line_y + 14 * scale)
-    avail_w = target_w - 24 * scale
+    bc_str = str(barcode_text).strip()
+    code_bbox = draw.textbbox((0, 0), bc_str, font=font_code)
+    code_h = (code_bbox[3] - code_bbox[1]) + 10 * scale
+
+    bars_img = _render_scannable_bars_only(bc_str, scale=scale)
+    bw, bh = bars_img.size
+
+    avail_h = max(40 * scale, target_h - (line_y + 12 * scale) - code_h)
+    avail_w = target_w - 32 * scale
     ratio = min(avail_w / max(1, bw), avail_h / max(1, bh))
     new_bw = max(1, int(bw * ratio))
     new_bh = max(1, int(bh * ratio))
-    resized_bc = barcode_img.resize((new_bw, new_bh), Image.Resampling.LANCZOS)
+    resized_bars = bars_img.resize((new_bw, new_bh), Image.Resampling.LANCZOS)
 
     bc_x = (target_w - new_bw) // 2
-    bc_y = line_y + 6 * scale + max(0, (avail_h - new_bh) // 2)
-    sticker_img.paste(resized_bc, (bc_x, bc_y))
+    bc_y = line_y + 8 * scale + max(0, (avail_h - new_bh) // 2)
+    sticker_img.paste(resized_bars, (bc_x, bc_y))
+
+    code_w = code_bbox[2] - code_bbox[0]
+    code_x = max(12 * scale, (target_w - code_w) // 2)
+    code_y = min(target_h - code_h + 2 * scale, bc_y + new_bh + 6 * scale)
+    draw.text((code_x, code_y), bc_str, fill="#111111", font=font_code)
 
     final_w = target_w // scale
     final_h = target_h // scale
@@ -299,102 +308,103 @@ def generate_vendor_custom_sticker(
     serial_code="",
 ):
     """
-    Generates a clean sticker with manually entered barcode number and optional fields
-    (SKU/Model, Batch Code, Net Qty, MRP Incl. of all taxes, Serial/Extra Code).
+    Generates a clean, scannable sticker sized for 105mm x 70mm (A4-8 sheet, 2x4)
+    with manually entered barcode number and optional fields.
     """
-    scale = 4
-    target_w = 635 * scale
-    target_h = 339 * scale
+    scale = 2
+    target_w = 1050 * scale
+    target_h = 700 * scale
     img = Image.new("RGB", (target_w, target_h), "white")
     draw = ImageDraw.Draw(img)
 
-    font_sku = _load_font(22 * scale, bold=True)
-    font_meta = _load_font(16 * scale, bold=True)
-    font_mrp = _load_font(18 * scale, bold=True)
-    font_serial = _load_font(16 * scale, bold=True)
+    font_sku = _load_font(34 * scale, bold=True)
+    font_meta = _load_font(24 * scale, bold=True)
+    font_mrp = _load_font(26 * scale, bold=True)
+    font_code = _load_font(28 * scale, bold=True)
+    font_serial = _load_font(24 * scale, bold=True)
 
-    y_cursor = 10 * scale
-    right_lines = []
+    pad_x = 32 * scale
+    y_top = 24 * scale
+
+    right_parts = []
     if batch_code.strip():
-        right_lines.append(batch_code.strip())
+        right_parts.append(batch_code.strip())
     if net_qty.strip():
-        right_lines.append(net_qty.strip())
+        right_parts.append(net_qty.strip())
+    right_str = "    ".join(right_parts)
 
     right_w = 0
-    for rl in right_lines:
-        bb = draw.textbbox((0, 0), rl, font=font_meta)
-        right_w = max(right_w, bb[2] - bb[0])
+    right_h = 0
+    if right_str:
+        rb = draw.textbbox((0, 0), right_str, font=font_meta)
+        right_w = rb[2] - rb[0]
+        right_h = rb[3] - rb[1]
+        draw.text((target_w - pad_x - right_w, y_top + 5 * scale), right_str, fill="#111111", font=font_meta)
 
+    sku_h = 0
     if sku_code.strip():
-        max_sku_w = target_w - right_w - 36 * scale
+        max_sku_w = max(140 * scale, target_w - right_w - (pad_x * 2) - 24 * scale)
         sku_txt = sku_code.strip().upper()
-        bb = draw.textbbox((0, 0), sku_txt, font=font_sku)
-        while bb[2] - bb[0] > max_sku_w and len(sku_txt) > 4:
+        sb = draw.textbbox((0, 0), sku_txt, font=font_sku)
+        while sb[2] - sb[0] > max_sku_w and len(sku_txt) > 3:
             sku_txt = sku_txt[:-1]
-            bb = draw.textbbox((0, 0), sku_txt, font=font_sku)
-        draw.text((16 * scale, y_cursor), sku_txt, fill="#111111", font=font_sku)
+            sb = draw.textbbox((0, 0), sku_txt, font=font_sku)
+        sku_h = sb[3] - sb[1]
+        draw.text((pad_x, y_top), sku_txt, fill="#111111", font=font_sku)
 
-    ry = 10 * scale
-    for rl in right_lines:
-        bb = draw.textbbox((0, 0), rl, font=font_meta)
-        rw = bb[2] - bb[0]
-        draw.text((target_w - 16 * scale - rw, ry), rl, fill="#111111", font=font_meta)
-        ry += (bb[3] - bb[1]) + 3 * scale
-
-    y_cursor = max(y_cursor + 28 * scale, ry + 4 * scale)
+    y_cursor = y_top + max(sku_h, right_h) + 16 * scale
 
     if mrp_text.strip():
         mrp_clean = mrp_text.strip()
         if "mrp" not in mrp_clean.lower():
             mrp_clean = f"MRP Rs. {mrp_clean} (Incl.of all taxes)"
-        bb = draw.textbbox((0, 0), mrp_clean, font=font_mrp)
-        mw = bb[2] - bb[0]
-        if mw > target_w - 32 * scale:
-            mrp_clean = mrp_clean[:42] + "..."
-            bb = draw.textbbox((0, 0), mrp_clean, font=font_mrp)
-            mw = bb[2] - bb[0]
-        draw.text((16 * scale, y_cursor), mrp_clean, fill="#111111", font=font_mrp)
-        y_cursor += (bb[3] - bb[1]) + 6 * scale
+        mb = draw.textbbox((0, 0), mrp_clean, font=font_mrp)
+        mw = mb[2] - mb[0]
+        if mw > target_w - (pad_x * 2):
+            mrp_clean = mrp_clean[:46] + "..."
+            mb = draw.textbbox((0, 0), mrp_clean, font=font_mrp)
+        draw.text((pad_x, y_cursor), mrp_clean, fill="#111111", font=font_mrp)
+        y_cursor += (mb[3] - mb[1]) + 18 * scale
 
-    bottom_reserve = 0
     serial_clean = serial_code.strip()
+    serial_h = 0
     if serial_clean:
-        s_bb = draw.textbbox((0, 0), serial_clean, font=font_serial)
-        bottom_reserve = (s_bb[3] - s_bb[1]) + 10 * scale
+        ser_b = draw.textbbox((0, 0), serial_clean, font=font_serial)
+        serial_h = (ser_b[3] - ser_b[1]) + 14 * scale
 
-    bc_avail_h = max(45 * scale, target_h - y_cursor - bottom_reserve - 6 * scale)
-    writer_options = {
-        "module_width": 0.34 * scale,
-        "module_height": max(8.0 * scale, (bc_avail_h / (scale * 2.2))),
-        "quiet_zone": 4 * scale,
-        "write_text": True,
-        "font_size": 11 * scale,
-        "text_distance": 3.0 * scale,
-    }
-    rv = BytesIO()
-    Code128(str(barcode_no), writer=ImageWriter()).write(rv, options=writer_options)
-    rv.seek(0)
-    bc_img = Image.open(rv)
-    bw, bh = bc_img.size
+    bc_str = str(barcode_no).strip()
+    code_b = draw.textbbox((0, 0), bc_str, font=font_code)
+    code_h = (code_b[3] - code_b[1]) + 16 * scale
 
-    bc_avail_w = target_w - 28 * scale
-    ratio = min(bc_avail_w / max(1, bw), bc_avail_h / max(1, bh))
+    bars_area_h = max(90 * scale, target_h - y_cursor - code_h - serial_h - 18 * scale)
+    bars_img = _render_scannable_bars_only(bc_str, scale=scale)
+    bw, bh = bars_img.size
+
+    bars_area_w = target_w - (pad_x * 2)
+    ratio = min(bars_area_w / max(1, bw), bars_area_h / max(1, bh))
     new_bw = max(1, int(bw * ratio))
     new_bh = max(1, int(bh * ratio))
-    resized_bc = bc_img.resize((new_bw, new_bh), Image.Resampling.LANCZOS)
+    resized_bars = bars_img.resize((new_bw, new_bh), Image.Resampling.LANCZOS)
 
     bc_x = (target_w - new_bw) // 2
-    bc_y = y_cursor + max(0, (bc_avail_h - new_bh) // 2)
-    img.paste(resized_bc, (bc_x, bc_y))
+    bc_y = y_cursor + max(0, (bars_area_h - new_bh) // 2)
+    img.paste(resized_bars, (bc_x, bc_y))
+
+    code_w = code_b[2] - code_b[0]
+    code_x = max(pad_x, (target_w - code_w) // 2)
+    code_y = bc_y + new_bh + 10 * scale
+    draw.text((code_x, code_y), bc_str, fill="#111111", font=font_code)
 
     if serial_clean:
-        s_bb = draw.textbbox((0, 0), serial_clean, font=font_serial)
-        sw = s_bb[2] - s_bb[0]
-        if sw > target_w - 32 * scale:
-            serial_clean = serial_clean[:34] + "..."
-            s_bb = draw.textbbox((0, 0), serial_clean, font=font_serial)
-            sw = s_bb[2] - s_bb[0]
-        draw.text((16 * scale, target_h - bottom_reserve + 2 * scale), serial_clean, fill="#111111", font=font_serial)
+        ser_b = draw.textbbox((0, 0), serial_clean, font=font_serial)
+        sw = ser_b[2] - ser_b[0]
+        if sw > target_w - (pad_x * 2):
+            serial_clean = serial_clean[:42] + "..."
+            ser_b = draw.textbbox((0, 0), serial_clean, font=font_serial)
+            sw = ser_b[2] - ser_b[0]
+        ser_x = max(pad_x, (target_w - sw) // 2)
+        ser_y = min(target_h - (ser_b[3] - ser_b[1]) - 16 * scale, code_y + (code_b[3] - code_b[1]) + 12 * scale)
+        draw.text((ser_x, ser_y), serial_clean, fill="#111111", font=font_serial)
 
     final_img = img.resize((target_w // scale, target_h // scale), Image.Resampling.LANCZOS)
     out_io = BytesIO()
@@ -402,28 +412,524 @@ def generate_vendor_custom_sticker(
     out_io.seek(0)
     return out_io
 
-def build_print_html(img_io):
-    img_bytes = img_io.getvalue()
-    encoded_img = base64.b64encode(img_bytes).decode("utf-8")
+def build_a4_8_grid_html(slots_8, auto_print=False):
+    """slots_8: list of 8 dicts {'name','barcode','b64'} or None (2 cols x 4 rows, 105mm x 70mm)."""
+    cells_html = []
+    for idx in range(8):
+        slot = slots_8[idx]
+        if slot:
+            cells_html.append(
+                f"""
+                <div class="label-cell">
+                    <img src="data:image/png;base64,{slot['b64']}" />
+                </div>
+                """
+            )
+        else:
+            cells_html.append('<div class="label-cell blank-cell"></div>')
+
+    grid_body = "\n".join(cells_html)
+    print_script = (
+        """
+        <script>
+            window.onload = function() {
+                setTimeout(function() {
+                    window.print();
+                }, 300);
+            };
+        </script>
+        """
+        if auto_print
+        else ""
+    )
+
     return f"""
     <html>
     <head>
+        <meta charset="utf-8" />
+        <title>A4 8-Sticker Sheet (105mm x 70mm)</title>
         <style>
-            @page {{ size: 63.5mm 33.9mm; margin: 0; }}
-            body {{ margin: 0; display: flex; justify-content: center; align-items: center; height: 100vh; background: white; }}
-            img {{ width: 63.5mm; height: 33.9mm; object-fit: contain; }}
+            @page {{
+                size: A4 portrait;
+                margin: 0;
+            }}
+            * {{
+                box-sizing: border-box;
+                page-break-inside: avoid;
+                break-inside: avoid;
+            }}
+            html, body {{
+                margin: 0;
+                padding: 0;
+                width: 210mm;
+                height: 294mm;
+                overflow: hidden;
+                background: #ffffff;
+            }}
+            .a4-sheet {{
+                width: 210mm;
+                height: 280mm;
+                margin: 8.5mm 0 0 0;
+                background: white;
+                display: grid;
+                grid-template-columns: repeat(2, 105mm);
+                grid-template-rows: repeat(4, 70mm);
+                page-break-after: avoid;
+                break-after: avoid;
+            }}
+            .label-cell {{
+                width: 105mm;
+                height: 70mm;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                padding: 1mm;
+                overflow: hidden;
+            }}
+            .label-cell img {{
+                width: 103mm;
+                height: 68mm;
+                object-fit: contain;
+            }}
         </style>
     </head>
     <body>
-        <img id="print_img" src="data:image/png;base64,{encoded_img}" />
+        <div class="a4-sheet">
+            {grid_body}
+        </div>
+        {print_script}
+    </body>
+    </html>
+    """
+
+def render_interactive_8_sheet_and_print(sticker_item, enabled_box_indices):
+    """
+    Renders an interactive 8-box (2x4) A4 sheet (105mm x 70mm per sticker) where clicking
+    any box toggles selection and printing outputs a clean 1-page A4 sheet.
+    """
+    item_json = json.dumps(sticker_item)
+    enabled_json = json.dumps(sorted(list(set(enabled_box_indices))))
+
+    component_html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+    <meta charset="utf-8" />
+    <style>
+        * {{
+            box-sizing: border-box;
+        }}
+        body {{
+            margin: 0;
+            padding: 6px 0 12px 0;
+            font-family: 'Segoe UI', Arial, sans-serif;
+            background: transparent;
+        }}
+        .top-bar {{
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 10px;
+            padding: 9px 14px;
+            background: #f8fafc;
+            border-radius: 8px;
+            border: 1px solid #cbd5e1;
+        }}
+        .top-bar .info {{
+            font-size: 13px;
+            color: #0f172a;
+            font-weight: 600;
+        }}
+        .top-bar .btn-group {{
+            display: flex;
+            gap: 8px;
+        }}
+        button.action-btn {{
+            border: none;
+            border-radius: 6px;
+            padding: 7px 14px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+        }}
+        .btn-clear {{
+            background: #e2e8f0;
+            color: #1e293b;
+        }}
+        .btn-print {{
+            background: #16a34a;
+            color: #ffffff;
+        }}
+        .sheet-wrapper {{
+            width: 100%;
+            max-width: 660px;
+            aspect-ratio: 210 / 280;
+            border: 1px solid #cbd5e1;
+            background: #ffffff;
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            grid-template-rows: repeat(4, 1fr);
+            box-shadow: 0 3px 12px rgba(15, 23, 42, 0.08);
+            border-radius: 4px;
+        }}
+        .box-cell {{
+            border: 1.5px solid #334155;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 4px;
+            cursor: pointer;
+            position: relative;
+            user-select: none;
+            transition: background 0.12s ease;
+            overflow: hidden;
+        }}
+        .box-cell:hover {{
+            background: #f0fdf4;
+            border-color: #16a34a;
+        }}
+        .box-cell.selected {{
+            border: 2px solid #15803d;
+            background: #ffffff;
+        }}
+        .box-num {{
+            position: absolute;
+            top: 4px;
+            left: 6px;
+            font-size: 11px;
+            color: #475569;
+            font-weight: 700;
+            background: rgba(255,255,255,0.9);
+            padding: 1px 5px;
+            border-radius: 3px;
+        }}
+        .box-empty-hint {{
+            font-size: 12px;
+            color: #94a3b8;
+        }}
+        .sticker-img {{
+            width: 98%;
+            height: 96%;
+            object-fit: contain;
+        }}
+    </style>
+    </head>
+    <body>
+        <div class="top-bar">
+            <div class="info" id="selectionSummary8">Selected: 0 / 8 — Click any box to toggle</div>
+            <div class="btn-group">
+                <button type="button" class="action-btn btn-clear" onclick="clearAllBoxes8()">Clear Boxes</button>
+                <button type="button" class="action-btn btn-print" onclick="triggerSinglePagePrint8()">🖨️ Print Selected (1 Page)</button>
+            </div>
+        </div>
+
+        <div class="sheet-wrapper" id="stickerSheet8"></div>
+
         <script>
-            document.getElementById('print_img').onload = function() {{
-                window.print();
-            }};
+            const stickerItem = {item_json};
+            let selectedSet8 = new Set({enabled_json});
+
+            function updateSummary8() {{
+                const arr = Array.from(selectedSet8).sort((a, b) => a - b);
+                const labelText = arr.length > 0 ? "Boxes #" + arr.join(", #") : "None";
+                document.getElementById("selectionSummary8").innerText =
+                    "Selected: " + arr.length + " / 8 (" + labelText + ") — Click any box to toggle";
+            }}
+
+            function renderSheet8() {{
+                const sheet = document.getElementById("stickerSheet8");
+                sheet.innerHTML = "";
+
+                for (let i = 1; i <= 8; i++) {{
+                    const isActive = selectedSet8.has(i) && stickerItem !== null;
+
+                    const cell = document.createElement("div");
+                    cell.className = "box-cell" + (isActive ? " selected" : "");
+                    cell.onclick = function() {{
+                        if (selectedSet8.has(i)) {{
+                            selectedSet8.delete(i);
+                        }} else {{
+                            selectedSet8.add(i);
+                        }}
+                        renderSheet8();
+                    }};
+
+                    const numTag = document.createElement("span");
+                    numTag.className = "box-num";
+                    numTag.innerText = "#" + i;
+                    cell.appendChild(numTag);
+
+                    if (isActive) {{
+                        const imgEl = document.createElement("img");
+                        imgEl.className = "sticker-img";
+                        imgEl.src = "data:image/png;base64," + stickerItem.b64;
+                        cell.appendChild(imgEl);
+                    }} else {{
+                        const hintEl = document.createElement("span");
+                        hintEl.className = "box-empty-hint";
+                        hintEl.innerText = "Off";
+                        cell.appendChild(hintEl);
+                    }}
+
+                    sheet.appendChild(cell);
+                }}
+                updateSummary8();
+            }}
+
+            function clearAllBoxes8() {{
+                selectedSet8.clear();
+                renderSheet8();
+            }}
+
+            function triggerSinglePagePrint8() {{
+                let printableCount = 0;
+                let cellsMarkup = "";
+
+                for (let i = 1; i <= 8; i++) {{
+                    if (selectedSet8.has(i) && stickerItem) {{
+                        printableCount += 1;
+                        cellsMarkup += '<div class="cell"><img src="data:image/png;base64,' + stickerItem.b64 + '" /></div>';
+                    }} else {{
+                        cellsMarkup += '<div class="cell"></div>';
+                    }}
+                }}
+
+                if (printableCount === 0) {{
+                    alert("Pehle kam se kam 1 active sticker box select karein.");
+                    return;
+                }}
+
+                const printWin = window.open("", "_blank", "width=850,height=1100");
+                if (!printWin) {{
+                    alert("Browser ne popup block kiya hai. Please allow popups for this site ya Download 1-Page A4 Print File (.html) use karein.");
+                    return;
+                }}
+
+                printWin.document.open();
+                printWin.document.write(`
+                    <!DOCTYPE html>
+                    <html>
+                    <head>
+                        <meta charset="utf-8" />
+                        <title>A4 8-Sticker Print Sheet (105mm x 70mm)</title>
+                        <style>
+                            @page {{
+                                size: A4 portrait;
+                                margin: 0;
+                            }}
+                            * {{
+                                box-sizing: border-box;
+                            }}
+                            html, body {{
+                                margin: 0;
+                                padding: 0;
+                                width: 210mm;
+                                height: 294mm;
+                                overflow: hidden;
+                                background: #ffffff;
+                            }}
+                            .sheet {{
+                                width: 210mm;
+                                height: 280mm;
+                                margin: 8.5mm 0 0 0;
+                                display: grid;
+                                grid-template-columns: repeat(2, 105mm);
+                                grid-template-rows: repeat(4, 70mm);
+                            }}
+                            .cell {{
+                                width: 105mm;
+                                height: 70mm;
+                                display: flex;
+                                justify-content: center;
+                                align-items: center;
+                                padding: 1mm;
+                                overflow: hidden;
+                            }}
+                            .cell img {{
+                                width: 103mm;
+                                height: 68mm;
+                                object-fit: contain;
+                            }}
+                        </style>
+                    </head>
+                    <body>
+                        <div class="sheet">${{cellsMarkup}}</div>
+                        <script>
+                            window.onload = function() {{
+                                setTimeout(function() {{
+                                    window.focus();
+                                    window.print();
+                                }}, 250);
+                            }};
+                        <\/script>
+                    </body>
+                    </html>
+                `);
+                printWin.document.close();
+            }}
+
+            renderSheet8();
         </script>
     </body>
     </html>
     """
+    html(component_html, height=960)
+
+def render_clickable_vendor_sticker(item, key_prefix="vendor_click"):
+    """Renders a single 105mm x 70mm custom sticker card that prints directly on click."""
+    if not item:
+        return
+    payload = json.dumps(item)
+    comp_html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+    <meta charset="utf-8" />
+    <style>
+        * {{
+            box-sizing: border-box;
+        }}
+        body {{
+            margin: 0;
+            padding: 4px 0 10px 0;
+            font-family: 'Segoe UI', Arial, sans-serif;
+            background: transparent;
+        }}
+        .sticker-card {{
+            max-width: 440px;
+            border: 1.5px solid #cbd5e1;
+            border-radius: 8px;
+            padding: 12px;
+            background: #ffffff;
+            cursor: pointer;
+            transition: all 0.14s ease;
+            box-shadow: 0 1px 4px rgba(15, 23, 42, 0.05);
+        }}
+        .sticker-card:hover {{
+            border-color: #16a34a;
+            background: #f0fdf4;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 10px rgba(22, 163, 74, 0.14);
+        }}
+        .sticker-card img {{
+            width: 100%;
+            height: auto;
+            display: block;
+            border-radius: 4px;
+            border: 1px solid #e2e8f0;
+        }}
+        .card-meta {{
+            margin-top: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            color: #334155;
+            font-weight: 600;
+        }}
+        .print-badge {{
+            background: #dcfce7;
+            color: #166534;
+            padding: 3px 9px;
+            border-radius: 999px;
+            font-size: 11px;
+            font-weight: 700;
+            white-space: nowrap;
+        }}
+    </style>
+    </head>
+    <body>
+        <div class="sticker-card" id="card_{key_prefix}" onclick="printVendorOne()">
+            <img id="img_{key_prefix}" src="" />
+            <div class="card-meta">
+                <span id="meta_{key_prefix}"></span>
+                <span class="print-badge">Click to Print (105×70mm)</span>
+            </div>
+        </div>
+        <script>
+            const vItem_{key_prefix} = {payload};
+            document.getElementById("img_{key_prefix}").src = "data:image/png;base64," + vItem_{key_prefix}.b64;
+            document.getElementById("meta_{key_prefix}").innerText = "ID: " + vItem_{key_prefix}.barcode;
+
+            function printVendorOne() {{
+                const win = window.open("", "_blank", "width=850,height=1100");
+                if (!win) {{
+                    alert("Browser ne popup block kiya hai. Please allow popups for this site.");
+                    return;
+                }}
+                win.document.open();
+                win.document.write(`
+                    <!DOCTYPE html>
+                    <html>
+                    <head>
+                        <meta charset="utf-8" />
+                        <title>${{vItem_{key_prefix}.name}}</title>
+                        <style>
+                            @page {{
+                                size: A4 portrait;
+                                margin: 0;
+                            }}
+                            * {{
+                                box-sizing: border-box;
+                            }}
+                            html, body {{
+                                margin: 0;
+                                padding: 0;
+                                width: 210mm;
+                                height: 294mm;
+                                overflow: hidden;
+                                background: #ffffff;
+                            }}
+                            .sheet {{
+                                width: 210mm;
+                                height: 280mm;
+                                margin: 8.5mm 0 0 0;
+                                display: grid;
+                                grid-template-columns: repeat(2, 105mm);
+                                grid-template-rows: repeat(4, 70mm);
+                            }}
+                            .cell {{
+                                width: 105mm;
+                                height: 70mm;
+                                display: flex;
+                                justify-content: center;
+                                align-items: center;
+                                padding: 1mm;
+                            }}
+                            .cell img {{
+                                width: 103mm;
+                                height: 68mm;
+                                object-fit: contain;
+                            }}
+                        </style>
+                    </head>
+                    <body>
+                        <div class="sheet">
+                            <div class="cell">
+                                <img src="data:image/png;base64,${{vItem_{key_prefix}.b64}}" />
+                            </div>
+                        </div>
+                        <script>
+                            window.onload = function() {{
+                                setTimeout(function() {{
+                                    window.focus();
+                                    window.print();
+                                }}, 250);
+                            }};
+                        <\/script>
+                    </body>
+                    </html>
+                `);
+                win.document.close();
+            }}
+        </script>
+    </body>
+    </html>
+    """
+    html(comp_html, height=345)
 
 def build_a4_24_grid_html(slots_data, auto_print=False):
     """slots_data: list of 24 dicts {'name','barcode','b64'} or None (3 cols x 8 rows, 63.5mm x 33.9mm)."""
@@ -821,19 +1327,19 @@ def render_clickable_barcode_list(items_list, key_prefix="bc_click"):
         }}
         body {{
             margin: 0;
-            padding: 4px 0;
+            padding: 4px 0 10px 0;
             font-family: 'Segoe UI', Arial, sans-serif;
             background: transparent;
         }}
         .sticker-grid {{
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-            gap: 12px;
+            gap: 14px;
         }}
         .sticker-card {{
             border: 1.5px solid #cbd5e1;
             border-radius: 8px;
-            padding: 10px;
+            padding: 12px;
             background: #ffffff;
             cursor: pointer;
             transition: all 0.14s ease;
@@ -852,10 +1358,11 @@ def render_clickable_barcode_list(items_list, key_prefix="bc_click"):
             border-radius: 4px;
         }}
         .card-meta {{
-            margin-top: 6px;
+            margin-top: 10px;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            gap: 8px;
             font-size: 11px;
             color: #334155;
             font-weight: 600;
@@ -863,10 +1370,11 @@ def render_clickable_barcode_list(items_list, key_prefix="bc_click"):
         .print-badge {{
             background: #dcfce7;
             color: #166534;
-            padding: 2px 7px;
+            padding: 3px 8px;
             border-radius: 999px;
             font-size: 10px;
             font-weight: 700;
+            white-space: nowrap;
         }}
     </style>
     </head>
@@ -971,7 +1479,7 @@ def render_clickable_barcode_list(items_list, key_prefix="bc_click"):
     </html>
     """
     row_count = max(1, (len(items_list) + 2) // 3)
-    comp_height = min(1400, max(210, row_count * 195 + 24))
+    comp_height = min(1400, max(225, row_count * 210 + 30))
     html(comp_html, height=comp_height)
 
 def get_next_barcode_id():
@@ -1076,7 +1584,7 @@ else:
                 "📊 Excel Sheet & Notes",
                 "📦 App Barcode Storage", 
                 "🖨️ Print 24-Sticker A4 (63.5x33.9mm)",
-                "🏷️ Custom / Vendor Barcode",
+                "🏷️ Custom / Vendor Barcode (105x70mm)",
                 "📂 App Downloaded History", 
                 "♻️ Trash / Bin Folder", 
                 "📜 Activity Audit Logs",
@@ -1093,7 +1601,7 @@ else:
                 "📊 Excel Sheet & Notes",
                 "📦 App Barcode Storage", 
                 "🖨️ Print 24-Sticker A4 (63.5x33.9mm)",
-                "🏷️ Custom / Vendor Barcode",
+                "🏷️ Custom / Vendor Barcode (105x70mm)",
                 "📂 App Downloaded History", 
                 "♻️ Trash / Bin Folder", 
                 "➕ Generate & Save Barcode", 
@@ -1636,9 +2144,9 @@ else:
                         })
                     render_clickable_barcode_list(clickable_all, key_prefix="all_stickers_click")
 
-    # --- SECTION 1.8: CUSTOM / VENDOR MANUAL BARCODE PANEL ---
-    elif menu == "🏷️ Custom / Vendor Barcode":
-        st.title("🏷️ Custom / Vendor Barcode Panel")
+    # --- SECTION 1.8: CUSTOM / VENDOR MANUAL BARCODE PANEL (105mm x 70mm, A4-8) ---
+    elif menu == "🏷️ Custom / Vendor Barcode (105x70mm)":
+        st.title("🏷️ Custom / Vendor Barcode Panel (105mm × 70mm — A4-8)")
         st.write("Dusri company ke product ke liye barcode number manually enter karein. Baaki sab details optional hain.")
         st.markdown("---")
 
@@ -1656,7 +2164,7 @@ else:
                 v_mrp = st.text_input("MRP / Price Info (Optional)", placeholder="e.g. MRP Rs. 775.00 (Incl.of all taxes)")
             v_serial = st.text_input("Serial / Extra Code (Optional)", placeholder="e.g. w 1801AJWH302983JX.T")
 
-            gen_vendor_btn = st.form_submit_button("Generate Custom Sticker")
+            gen_vendor_btn = st.form_submit_button("Generate Custom Sticker (105×70mm)")
 
             if gen_vendor_btn:
                 clean_bc = v_barcode.strip()
@@ -1681,7 +2189,7 @@ else:
                     log_activity(
                         st.session_state.username,
                         "CUSTOM_VENDOR_BARCODE",
-                        f"Generated custom vendor sticker for barcode {clean_bc} ({label_title}).",
+                        f"Generated 105x70mm custom vendor sticker for barcode {clean_bc} ({label_title}).",
                     )
                 except Exception as e:
                     st.error(f"Barcode generate karne mein error aaya: {e}")
@@ -1690,22 +2198,46 @@ else:
             vp = st.session_state.vendor_sticker_preview
             st.markdown("---")
             st.subheader("🖨️ Generated Sticker (Click karke print karein)")
-            render_clickable_barcode_list(
-                [
-                    {
-                        "name": vp["title"],
-                        "barcode": vp["barcode"],
-                        "b64": vp["b64"],
-                    }
-                ],
+            render_clickable_vendor_sticker(
+                {
+                    "name": vp["title"],
+                    "barcode": vp["barcode"],
+                    "b64": vp["b64"],
+                },
                 key_prefix="vendor_custom_preview",
             )
-            st.download_button(
-                label="💾 Download Custom Sticker PNG",
-                data=base64.b64decode(vp["b64"]),
-                file_name=f"custom_{vp['barcode']}.png",
-                mime="image/png",
-                key="dl_vendor_sticker_png",
+            st.markdown("<div style='height: 16px;'></div>", unsafe_allow_html=True)
+
+            col_v_dl1, col_v_dl2 = st.columns(2)
+            with col_v_dl1:
+                st.download_button(
+                    label="💾 Download Sticker PNG (105×70mm)",
+                    data=base64.b64decode(vp["b64"]),
+                    file_name=f"custom_105x70_{vp['barcode']}.png",
+                    mime="image/png",
+                    key="dl_vendor_sticker_png",
+                )
+
+            with col_v_dl2:
+                full_8_html = build_a4_8_grid_html([vp] * 8, auto_print=False)
+                st.download_button(
+                    label="📄 Download 8-Sticker A4 Print File (.html)",
+                    data=full_8_html.encode("utf-8"),
+                    file_name=f"A4_8_Stickers_105x70_{vp['barcode']}.html",
+                    mime="text/html",
+                    key="dl_vendor_a4_8_html",
+                )
+
+            st.markdown("---")
+            st.subheader("📋 A4 - 8 Sheet Preview (105mm × 70mm — 2×4 Grid)")
+            st.caption("Kisi bhi box (#1 to #8) par click karke ON/OFF karein, phir **Print Selected (1 Page)** dabayein.")
+            render_interactive_8_sheet_and_print(
+                sticker_item={
+                    "name": vp["title"],
+                    "barcode": vp["barcode"],
+                    "b64": vp["b64"],
+                },
+                enabled_box_indices=[1],
             )
 
     # --- SECTION 2: APP DOWNLOADED HISTORY ---
