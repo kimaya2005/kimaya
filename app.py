@@ -217,6 +217,45 @@ def record_download_history(item_name, barcode_id, username):
     except Exception:
         pass
 
+def inject_print_css():
+    """Allows Ctrl+P on the main Streamlit page to print cleanly without sidebar or extra UI."""
+    st.markdown(
+        """
+        <style>
+        @media print {
+            @page {
+                size: A4 portrait;
+                margin: 8mm;
+            }
+            [data-testid="stSidebar"],
+            [data-testid="stHeader"],
+            [data-testid="stToolbar"],
+            [data-testid="stDecoration"],
+            [data-testid="stStatusWidget"],
+            .stButton,
+            .stDownloadButton,
+            .stTextInput,
+            .stNumberInput,
+            .stSelectbox,
+            .stRadio,
+            .stTabs [data-baseweb="tab-list"] {
+                display: none !important;
+            }
+            .main .block-container {
+                max-width: 100% !important;
+                padding: 0 !important;
+                margin: 0 !important;
+            }
+            iframe {
+                page-break-inside: avoid;
+                break-inside: avoid;
+            }
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
 def _load_font(size_px, bold=True):
     font_paths = (
         [
@@ -522,7 +561,8 @@ def build_a4_8_grid_html(slots_8, auto_print=False):
 def render_interactive_8_sheet_and_print(sticker_item, enabled_box_indices):
     """
     Renders an interactive 8-box (2x4) A4 sheet (105mm x 70mm per sticker) where clicking
-    any box (#1 to #8) places or removes the sticker so half-used sheets can be reused.
+    any box (#1 to #8) places or removes the sticker so half-used sheets can be reused,
+    and supports both the Print button and Ctrl+P.
     """
     item_json = json.dumps(sticker_item)
     enabled_json = json.dumps(sorted(list(set(enabled_box_indices))))
@@ -635,6 +675,46 @@ def render_interactive_8_sheet_and_print(sticker_item, enabled_box_indices):
             width: 98%;
             height: 96%;
             object-fit: contain;
+        }}
+        @media print {{
+            @page {{
+                size: A4 portrait;
+                margin: 0;
+            }}
+            body {{
+                margin: 0;
+                padding: 0;
+            }}
+            .top-bar {{
+                display: none !important;
+            }}
+            .sheet-wrapper {{
+                width: 210mm !important;
+                max-width: 210mm !important;
+                height: 280mm !important;
+                aspect-ratio: auto !important;
+                margin: 8.5mm 0 0 0 !important;
+                border: none !important;
+                box-shadow: none !important;
+                grid-template-columns: repeat(2, 105mm) !important;
+                grid-template-rows: repeat(4, 70mm) !important;
+            }}
+            .box-cell {{
+                width: 105mm !important;
+                height: 70mm !important;
+                border: none !important;
+                padding: 1mm !important;
+            }}
+            .box-cell:not(.selected) img {{
+                display: none !important;
+            }}
+            .box-num, .box-empty-hint {{
+                display: none !important;
+            }}
+            .sticker-img {{
+                width: 103mm !important;
+                height: 68mm !important;
+            }}
         }}
     </style>
     </head>
@@ -1053,7 +1133,7 @@ def render_interactive_24_sheet_and_print(items_catalog, box_item_map, enabled_b
     """
     Renders an interactive 24-box (3x8) A4 sticker sheet where clicking ANY box (#1 to #24)
     immediately places the active sticker into that box (or removes it if already active),
-    and includes an active sticker selector so half-used sheets can be filled in any exact box.
+    and supports both the Print button and Ctrl+P.
     """
     catalog_json = json.dumps(items_catalog)
     box_map_json = json.dumps(box_item_map)
@@ -1190,6 +1270,47 @@ def render_interactive_24_sheet_and_print(items_catalog, box_item_map, enabled_b
             width: 98%;
             height: 95%;
             object-fit: contain;
+        }}
+        @media print {{
+            @page {{
+                size: A4 portrait;
+                margin: 0;
+            }}
+            body {{
+                margin: 0;
+                padding: 0;
+            }}
+            .brush-bar, .top-bar {{
+                display: none !important;
+            }}
+            .sheet-wrapper {{
+                width: 190.5mm !important;
+                max-width: 190.5mm !important;
+                height: 270mm !important;
+                aspect-ratio: auto !important;
+                margin: 12mm 9.75mm 0 9.75mm !important;
+                padding: 0 !important;
+                border: none !important;
+                box-shadow: none !important;
+                grid-template-columns: repeat(3, 63.5mm) !important;
+                grid-template-rows: repeat(8, 33.75mm) !important;
+            }}
+            .box-cell {{
+                width: 63.5mm !important;
+                height: 33.75mm !important;
+                border: none !important;
+                padding: 0.5mm !important;
+            }}
+            .box-cell:not(.selected) img {{
+                display: none !important;
+            }}
+            .box-num, .box-empty-hint {{
+                display: none !important;
+            }}
+            .sticker-img {{
+                width: 62.5mm !important;
+                height: 32.8mm !important;
+            }}
         }}
     </style>
     </head>
@@ -1585,6 +1706,8 @@ def get_next_barcode_id():
 # ---------------------------------------------------------
 # SESSION STATE MANAGEMENT
 # ---------------------------------------------------------
+inject_print_css()
+
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
     st.session_state.username = ""
@@ -2155,7 +2278,7 @@ else:
                         default_brush_key=active_key,
                     )
 
-                    st.info("💡 **Zero Waste Tip:** Agar `#1` se `#6` pehle print ho chuke hain, toh **Clear Boxes** dabayein aur seedha **`#7`, `#8`, `#9`...** par click karein — `#1` se `#6` blank rahenge aur wahi half page reuse ho jayega.")
+                    st.info("💡 **Dono Options Available:** Aap **Print Selected (1 Page)** button bhi daba sakte hain ya seedha **`Ctrl + P`** bhi kar sakte hain — dono se clean sheet print hogi.")
 
                 else:
                     st.subheader("📋 Sab Saved Barcodes (All Products)")
@@ -2627,7 +2750,7 @@ else:
                         key=f"dl_vf_html_{sel_v_id}",
                     )
 
-                st.caption("Kisi bhi box (#1 to #8) par seedha click karke sticker lagayein ya hatayein, phir **Print Selected (1 Page)** dabayein.")
+                st.caption("Kisi bhi box (#1 to #8) par seedha click karke sticker lagayein ya hatayein, phir **Print Selected (1 Page)** ya **`Ctrl + P`** dabayein.")
                 render_interactive_8_sheet_and_print(
                     sticker_item=sel_v_item,
                     enabled_box_indices=[1],
