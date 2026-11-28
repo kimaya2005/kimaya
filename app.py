@@ -219,7 +219,6 @@ def generate_custom_barcode_image(item_name, barcode_text):
     barcode_img = Image.open(rv)
     bw, bh = barcode_img.size
 
-    # Target aspect ratio 52.5mm x 29.7mm
     target_w = 525 * scale
     target_h = 297 * scale
     sticker_img = Image.new("RGB", (target_w, target_h), "white")
@@ -412,6 +411,94 @@ def build_a4_40_grid_html(slots_data, auto_print=True):
     </html>
     """
 
+def render_top_level_a4_print_overlay(slots_data):
+    """Renders an A4 sheet directly in the top DOM so @media print prints ONLY the 40-sticker A4 sheet."""
+    cells = []
+    for idx in range(40):
+        slot = slots_data[idx]
+        if slot:
+            cells.append(
+                f'<div class="raut-a4-cell"><div class="raut-a4-name">{slot["name"].upper()}</div><img src="data:image/png;base64,{slot["b64"]}" /></div>'
+            )
+        else:
+            cells.append('<div class="raut-a4-cell"></div>')
+
+    grid_items_html = "".join(cells)
+    st.markdown(
+        f"""
+        <style>
+            .raut-a4-screen-preview {{
+                width: 100%;
+                max-width: 720px;
+                aspect-ratio: 210 / 297;
+                border: 1px solid #ccc;
+                background: #ffffff;
+                display: grid;
+                grid-template-columns: repeat(4, 1fr);
+                grid-template-rows: repeat(10, 1fr);
+                margin: 10px 0 18px 0;
+            }}
+            .raut-a4-cell {{
+                border: 0.5px dashed #e0e0e0;
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                align-items: center;
+                padding: 2px;
+                overflow: hidden;
+            }}
+            .raut-a4-name {{
+                font-size: 8px;
+                font-weight: bold;
+                color: #000;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                max-width: 95%;
+                line-height: 1.1;
+            }}
+            .raut-a4-cell img {{
+                max-width: 95%;
+                max-height: 72%;
+                object-fit: contain;
+            }}
+            @media print {{
+                @page {{
+                    size: A4 portrait;
+                    margin: 0;
+                }}
+                body * {{
+                    visibility: hidden !important;
+                }}
+                .raut-a4-screen-preview, .raut-a4-screen-preview * {{
+                    visibility: visible !important;
+                }}
+                .raut-a4-screen-preview {{
+                    position: fixed !important;
+                    left: 0 !important;
+                    top: 0 !important;
+                    width: 210mm !important;
+                    height: 297mm !important;
+                    max-width: 210mm !important;
+                    aspect-ratio: auto !important;
+                    border: none !important;
+                    margin: 0 !important;
+                    padding: 0 !important;
+                    grid-template-columns: repeat(4, 52.5mm) !important;
+                    grid-template-rows: repeat(10, 29.7mm) !important;
+                }}
+                .raut-a4-cell {{
+                    border: none !important;
+                    width: 52.5mm !important;
+                    height: 29.7mm !important;
+                }}
+            }}
+        </style>
+        <div class="raut-a4-screen-preview">{grid_items_html}</div>
+        """,
+        unsafe_allow_html=True,
+    )
+
 def get_next_barcode_id():
     conn = get_db_connection()
     c = conn.cursor()
@@ -438,6 +525,9 @@ if "active_custom_page_id" not in st.session_state:
 
 if "generated_preview_item" not in st.session_state:
     st.session_state.generated_preview_item = None
+
+if "trigger_a4_print" not in st.session_state:
+    st.session_state.trigger_a4_print = False
 
 if st.session_state.logged_in:
     conn = get_db_connection()
@@ -902,7 +992,7 @@ else:
         else:
             mode = st.radio(
                 "Print Mode",
-                ["🎯 Ek Product ke Multiple Stickers", "📋 Sab Products Ek Ke Niche Ek (Single PNG/Print)"],
+                ["🎯 Ek Product ke Multiple Stickers", "📋 Sab Products Ek Ke Niche Ek"],
                 horizontal=True,
                 key="a4_40_mode",
             )
@@ -958,10 +1048,24 @@ else:
                 with col_a3:
                     if st.button("🖨️ Print A4 Sheet (40-Grid)", type="primary"):
                         record_download_history(p_name, p_barcode, st.session_state.username)
-                        html(printable_a4_html, height=140)
-                        st.success(f"✅ Box #{int(start_box)} se {int(qty)} stickers ka A4 print dialog trigger ho gaya hai!")
+                        st.session_state.trigger_a4_print = True
 
-                st.info("💡 **Tip:** Agar browser ke andar popup print sahi size na dikhaye, toh **Download A4 Print File (.html)** download karke double-click se browser mein kholo — wahan exact `52.5mm × 29.7mm` ke 40 boxes print honge. Printer **Canon G3010**, Paper Size **A4**, Scale **100%**, aur Margins **None** rakhein.")
+                render_top_level_a4_print_overlay(slots)
+
+                if st.session_state.trigger_a4_print:
+                    st.session_state.trigger_a4_print = False
+                    html(
+                        """
+                        <script>
+                            setTimeout(function() {
+                                window.parent.print();
+                            }, 250);
+                        </script>
+                        """,
+                        height=0,
+                    )
+
+                st.info("💡 **Tip:** **Print A4 Sheet (40-Grid)** dabane par sirf upar wala 40-box A4 sheet print hoga (sidebar aur menu print nahi honge). Destination **Canon G3010 series**, Paper Size **A4**, Scale **100%**, aur Margins **None** rakhein.")
 
             else:
                 search_print = st.text_input("🔍 Search Barcode / Product...", "", key="search_all_40").strip().lower()
