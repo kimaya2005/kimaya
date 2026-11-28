@@ -200,17 +200,17 @@ def record_download_history(item_name, barcode_id, username):
     except Exception:
         pass
 
-# Helper function: Sized for 63.5mm x 33.9mm (24 stickers per A4 sheet, 3x8) with SINGLE centered product name
+# Helper function: Clean professional sticker sized for 63.5mm x 33.9mm (24 stickers per A4 sheet, 3x8)
 def generate_custom_barcode_image(item_name, barcode_text):
-    scale = 3
+    scale = 4
 
     writer_options = {
-        "module_width": 0.30 * scale,
-        "module_height": 11.0 * scale,
-        "quiet_zone": 6 * scale,
+        "module_width": 0.34 * scale,
+        "module_height": 12.5 * scale,
+        "quiet_zone": 5 * scale,
         "write_text": True,
-        "font_size": 11 * scale,
-        "text_distance": 4.0 * scale,
+        "font_size": 12 * scale,
+        "text_distance": 3.5 * scale,
     }
 
     rv = BytesIO()
@@ -236,34 +236,34 @@ def generate_custom_barcode_image(item_name, barcode_text):
 
     for path in font_paths:
         try:
-            font_title = ImageFont.truetype(path, 25 * scale)
+            font_title = ImageFont.truetype(path, 28 * scale)
             break
         except IOError:
             continue
 
     if not font_title:
         try:
-            font_title = ImageFont.load_default(size=25 * scale)
+            font_title = ImageFont.load_default(size=28 * scale)
         except TypeError:
             font_title = ImageFont.load_default()
 
     text_to_draw = f"{item_name.upper()}"
     bbox = draw.textbbox((0, 0), text_to_draw, font=font_title)
     text_w = bbox[2] - bbox[0]
-    if text_w > target_w - 30 * scale:
-        text_to_draw = text_to_draw[:30] + "..."
+    if text_w > target_w - 36 * scale:
+        text_to_draw = text_to_draw[:28] + "..."
         bbox = draw.textbbox((0, 0), text_to_draw, font=font_title)
         text_w = bbox[2] - bbox[0]
 
-    text_x = max(5 * scale, (target_w - text_w) // 2)
-    text_y = 12 * scale
-    draw.text((text_x, text_y), text_to_draw, fill="black", font=font_title)
+    text_x = max(8 * scale, (target_w - text_w) // 2)
+    text_y = 14 * scale
+    draw.text((text_x, text_y), text_to_draw, fill="#111111", font=font_title)
 
-    line_y = 48 * scale
-    draw.line([(18 * scale, line_y), (target_w - 18 * scale, line_y)], fill="black", width=2 * scale)
+    line_y = 54 * scale
+    draw.line([(20 * scale, line_y), (target_w - 20 * scale, line_y)], fill="#222222", width=2 * scale)
 
     avail_h = target_h - (line_y + 14 * scale)
-    avail_w = target_w - 28 * scale
+    avail_w = target_w - 24 * scale
     ratio = min(avail_w / max(1, bw), avail_h / max(1, bh))
     new_bw = max(1, int(bw * ratio))
     new_bh = max(1, int(bh * ratio))
@@ -376,12 +376,12 @@ def build_a4_24_grid_html(slots_data, auto_print=False):
                 display: flex;
                 justify-content: center;
                 align-items: center;
-                padding: 1mm;
+                padding: 0.5mm;
                 overflow: hidden;
             }}
             .label-cell img {{
-                width: 61.5mm;
-                height: 31.8mm;
+                width: 62.5mm;
+                height: 32.8mm;
                 object-fit: contain;
             }}
         </style>
@@ -398,7 +398,8 @@ def build_a4_24_grid_html(slots_data, auto_print=False):
 def render_interactive_24_sheet_and_print(items_catalog, box_item_map, enabled_box_indices):
     """
     Renders an interactive 24-box (3x8) A4 sticker sheet where each box (#1 to #24) can have
-    its own product/barcode from items_catalog, and clicking any box toggles whether that box prints.
+    its own product/barcode from items_catalog, clicking toggles active boxes, and printing
+    outputs a clean 1-page A4 sheet.
     """
     catalog_json = json.dumps(items_catalog)
     box_map_json = json.dumps(box_item_map)
@@ -416,7 +417,7 @@ def render_interactive_24_sheet_and_print(items_catalog, box_item_map, enabled_b
         body {{
             margin: 0;
             padding: 6px 0 12px 0;
-            font-family: Arial, sans-serif;
+            font-family: 'Segoe UI', Arial, sans-serif;
             background: transparent;
         }}
         .top-bar {{
@@ -426,14 +427,14 @@ def render_interactive_24_sheet_and_print(items_catalog, box_item_map, enabled_b
             align-items: center;
             gap: 8px;
             margin-bottom: 10px;
-            padding: 8px 12px;
-            background: #f4f6f9;
-            border-radius: 6px;
-            border: 1px solid #dde2e8;
+            padding: 9px 14px;
+            background: #f8fafc;
+            border-radius: 8px;
+            border: 1px solid #cbd5e1;
         }}
         .top-bar .info {{
             font-size: 13px;
-            color: #1f2937;
+            color: #0f172a;
             font-weight: 600;
         }}
         .top-bar .btn-group {{
@@ -442,18 +443,18 @@ def render_interactive_24_sheet_and_print(items_catalog, box_item_map, enabled_b
         }}
         button.action-btn {{
             border: none;
-            border-radius: 5px;
+            border-radius: 6px;
             padding: 7px 14px;
             font-size: 12px;
             font-weight: 600;
             cursor: pointer;
         }}
         .btn-clear {{
-            background: #e5e7eb;
-            color: #111827;
+            background: #e2e8f0;
+            color: #1e293b;
         }}
         .btn-print {{
-            background: #dc2626;
+            background: #16a34a;
             color: #ffffff;
         }}
         .sheet-wrapper {{
@@ -466,7 +467,8 @@ def render_interactive_24_sheet_and_print(items_catalog, box_item_map, enabled_b
             display: grid;
             grid-template-columns: repeat(3, 1fr);
             grid-template-rows: repeat(8, 1fr);
-            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+            box-shadow: 0 3px 12px rgba(15, 23, 42, 0.08);
+            border-radius: 4px;
         }}
         .box-cell {{
             border: 1px dashed #cbd5e1;
@@ -481,11 +483,11 @@ def render_interactive_24_sheet_and_print(items_catalog, box_item_map, enabled_b
             overflow: hidden;
         }}
         .box-cell:hover {{
-            background: #f0f9ff;
-            border-color: #0284c7;
+            background: #f0fdf4;
+            border-color: #16a34a;
         }}
         .box-cell.selected {{
-            border: 1.5px solid #16a34a;
+            border: 1.5px solid #15803d;
             background: #ffffff;
         }}
         .box-num {{
@@ -495,8 +497,8 @@ def render_interactive_24_sheet_and_print(items_catalog, box_item_map, enabled_b
             font-size: 9px;
             color: #64748b;
             font-weight: 700;
-            background: rgba(255,255,255,0.88);
-            padding: 0 2px;
+            background: rgba(255,255,255,0.9);
+            padding: 0 3px;
             border-radius: 2px;
         }}
         .box-empty-hint {{
@@ -504,8 +506,8 @@ def render_interactive_24_sheet_and_print(items_catalog, box_item_map, enabled_b
             color: #94a3b8;
         }}
         .sticker-img {{
-            max-width: 96%;
-            max-height: 92%;
+            width: 98%;
+            height: 95%;
             object-fit: contain;
         }}
     </style>
@@ -585,7 +587,6 @@ def render_interactive_24_sheet_and_print(items_catalog, box_item_map, enabled_b
             }}
 
             function triggerSinglePagePrint() {{
-                const arr = Array.from(selectedSet).sort((a, b) => a - b);
                 let printableCount = 0;
                 let cellsMarkup = "";
 
@@ -616,7 +617,7 @@ def render_interactive_24_sheet_and_print(items_catalog, box_item_map, enabled_b
                     <html>
                     <head>
                         <meta charset="utf-8" />
-                        <title>Print 1 A4 Sheet (24 Stickers)</title>
+                        <title>Sticker Print Sheet</title>
                         <style>
                             @page {{
                                 size: A4 portrait;
@@ -647,12 +648,12 @@ def render_interactive_24_sheet_and_print(items_catalog, box_item_map, enabled_b
                                 display: flex;
                                 justify-content: center;
                                 align-items: center;
-                                padding: 1mm;
+                                padding: 0.5mm;
                                 overflow: hidden;
                             }}
                             .cell img {{
-                                width: 61.5mm;
-                                height: 31.8mm;
+                                width: 62.5mm;
+                                height: 32.8mm;
                                 object-fit: contain;
                             }}
                         </style>
@@ -679,6 +680,179 @@ def render_interactive_24_sheet_and_print(items_catalog, box_item_map, enabled_b
     </html>
     """
     html(component_html, height=1060)
+
+def render_clickable_barcode_list(items_list, key_prefix="bc_click"):
+    """
+    Renders each barcode as a clickable sticker card: clicking any sticker opens a clean
+    single-sticker print window for that exact sticker (no separate 'Print Single Sticker' button).
+    """
+    if not items_list:
+        return
+
+    payload = json.dumps(items_list)
+    comp_html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+    <meta charset="utf-8" />
+    <style>
+        * {{
+            box-sizing: border-box;
+        }}
+        body {{
+            margin: 0;
+            padding: 4px 0;
+            font-family: 'Segoe UI', Arial, sans-serif;
+            background: transparent;
+        }}
+        .sticker-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+            gap: 12px;
+        }}
+        .sticker-card {{
+            border: 1.5px solid #cbd5e1;
+            border-radius: 8px;
+            padding: 10px;
+            background: #ffffff;
+            cursor: pointer;
+            transition: all 0.14s ease;
+            box-shadow: 0 1px 4px rgba(15, 23, 42, 0.05);
+        }}
+        .sticker-card:hover {{
+            border-color: #16a34a;
+            background: #f0fdf4;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 10px rgba(22, 163, 74, 0.14);
+        }}
+        .sticker-card img {{
+            width: 100%;
+            height: auto;
+            display: block;
+            border-radius: 4px;
+        }}
+        .card-meta {{
+            margin-top: 6px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 11px;
+            color: #334155;
+            font-weight: 600;
+        }}
+        .print-badge {{
+            background: #dcfce7;
+            color: #166534;
+            padding: 2px 7px;
+            border-radius: 999px;
+            font-size: 10px;
+            font-weight: 700;
+        }}
+    </style>
+    </head>
+    <body>
+        <div class="sticker-grid" id="grid_{key_prefix}"></div>
+        <script>
+            const listData_{key_prefix} = {payload};
+            const container_{key_prefix} = document.getElementById("grid_{key_prefix}");
+
+            function printClickedSticker(item) {{
+                const win = window.open("", "_blank", "width=750,height=600");
+                if (!win) {{
+                    alert("Browser ne popup block kiya hai. Please allow popups for this site.");
+                    return;
+                }}
+                win.document.open();
+                win.document.write(`
+                    <!DOCTYPE html>
+                    <html>
+                    <head>
+                        <meta charset="utf-8" />
+                        <title>${{item.name}}</title>
+                        <style>
+                            @page {{
+                                size: A4 portrait;
+                                margin: 0;
+                            }}
+                            * {{
+                                box-sizing: border-box;
+                            }}
+                            html, body {{
+                                margin: 0;
+                                padding: 0;
+                                width: 210mm;
+                                height: 294mm;
+                                overflow: hidden;
+                                background: #ffffff;
+                            }}
+                            .sheet {{
+                                width: 190.5mm;
+                                height: 270mm;
+                                margin: 12mm 9.75mm 0 9.75mm;
+                                display: grid;
+                                grid-template-columns: repeat(3, 63.5mm);
+                                grid-template-rows: repeat(8, 33.75mm);
+                            }}
+                            .cell {{
+                                width: 63.5mm;
+                                height: 33.75mm;
+                                display: flex;
+                                justify-content: center;
+                                align-items: center;
+                                padding: 0.5mm;
+                            }}
+                            .cell img {{
+                                width: 62.5mm;
+                                height: 32.8mm;
+                                object-fit: contain;
+                            }}
+                        </style>
+                    </head>
+                    <body>
+                        <div class="sheet">
+                            <div class="cell">
+                                <img src="data:image/png;base64,${{item.b64}}" />
+                            </div>
+                        </div>
+                        <script>
+                            window.onload = function() {{
+                                setTimeout(function() {{
+                                    window.focus();
+                                    window.print();
+                                }}, 250);
+                            }};
+                        <\/script>
+                    </body>
+                    </html>
+                `);
+                win.document.close();
+            }}
+
+            listData_{key_prefix}.forEach(function(item) {{
+                const card = document.createElement("div");
+                card.className = "sticker-card";
+                card.onclick = function() {{
+                    printClickedSticker(item);
+                }};
+
+                const img = document.createElement("img");
+                img.src = "data:image/png;base64," + item.b64;
+                card.appendChild(img);
+
+                const meta = document.createElement("div");
+                meta.className = "card-meta";
+                meta.innerHTML = "<span>ID: " + item.barcode + "</span><span class='print-badge'>Click to Print</span>";
+                card.appendChild(meta);
+
+                container_{key_prefix}.appendChild(card);
+            }});
+        </script>
+    </body>
+    </html>
+    """
+    row_count = max(1, (len(items_list) + 2) // 3)
+    comp_height = min(1400, max(210, row_count * 195 + 24))
+    html(comp_html, height=comp_height)
 
 def get_next_barcode_id():
     conn = get_db_connection()
@@ -1090,7 +1264,7 @@ else:
     # --- SECTION 1: APP STORAGE WITH SEARCH BAR ---
     elif menu == "📦 App Barcode Storage":
         st.title("📦 App Central Barcode Storage")
-        st.write("Yahan saare saved barcodes 100% scanner-friendly pure numeric format mein hain.")
+        st.write("Kisi bhi sticker par click karke seedha print karein ya PNG download/history mein save karein.")
         st.markdown("---")
 
         search_query = st.text_input("🔍 Search Products (Type Item Name or Barcode ID)...", "").strip().lower()
@@ -1106,15 +1280,28 @@ else:
         if df.empty:
             st.info("Koi matching barcode nahi mila.")
         else:
-            col_exp1, _ = st.columns(2)
-            with col_exp1:
-                csv_data = df.to_csv(index=False).encode('utf-8')
-                st.download_button(
-                    label="📥 Export Filtered List as CSV",
-                    data=csv_data,
-                    file_name="raut_filtered_inventory.csv",
-                    mime="text/csv",
-                )
+            csv_data = df.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Export Filtered List as CSV",
+                data=csv_data,
+                file_name="raut_filtered_inventory.csv",
+                mime="text/csv",
+            )
+            st.markdown("---")
+
+            clickable_items = []
+            for _, row in df.iterrows():
+                item_name = str(row['item_name'])
+                barcode_id = str(row['barcode_id'])
+                img_io_item = generate_custom_barcode_image(item_name, barcode_id)
+                clickable_items.append({
+                    "name": item_name,
+                    "barcode": barcode_id,
+                    "b64": base64.b64encode(img_io_item.getvalue()).decode("utf-8"),
+                })
+
+            st.caption("💡 Jis sticker par click karenge, wahi sticker turant print preview mein khulega.")
+            render_clickable_barcode_list(clickable_items, key_prefix="storage_list")
             st.markdown("---")
 
             for _, row in df.iterrows():
@@ -1124,41 +1311,28 @@ else:
                 price = row['price']
                 slot_category = row['slot_category']
 
-                with st.container():
-                    try:
-                        custom_barcode_io = generate_custom_barcode_image(item_name, barcode_id)
-                        st.image(custom_barcode_io, width=320)
-                    except Exception as e:
-                        st.error(f"Barcode render error: {e}")
-
-                    col1, col2 = st.columns(2)
-                    
-                    with col1:
-                        if st.button(f"📥 Save to App History", key=f"save_app_{item_id}"):
-                            record_download_history(item_name, barcode_id, st.session_state.username)
-                            st.success(f"✅ App History mein save ho gaya!")
-
-                    with col2:
-                        try:
-                            local_img_io = generate_custom_barcode_image(item_name, barcode_id)
-                            if st.download_button(
-                                label="💾 Download PNG File",
-                                data=local_img_io,
-                                file_name=f"{item_name}_{barcode_id}.png",
-                                mime="image/png",
-                                key=f"download_device_{item_id}"
-                            ):
-                                record_download_history(item_name, barcode_id, st.session_state.username)
-                        except Exception as e:
-                            st.error(f"Download error: {e}")
-
-                    st.caption(f"Record ID: #{item_id} | Price: {price or 'N/A'} | Slot/Cat: {slot_category or 'N/A'}")
-                    st.markdown("---")
+                col1, col2, col3 = st.columns([3, 1.5, 1.5])
+                with col1:
+                    st.write(f"**{item_name.upper()}** (`{barcode_id}`) | Price: {price or 'N/A'} | Slot: {slot_category or 'N/A'}")
+                with col2:
+                    if st.button("📥 Save History", key=f"save_app_{item_id}"):
+                        record_download_history(item_name, barcode_id, st.session_state.username)
+                        st.success("Saved!")
+                with col3:
+                    local_img_io = generate_custom_barcode_image(item_name, barcode_id)
+                    if st.download_button(
+                        label="💾 Download PNG",
+                        data=local_img_io,
+                        file_name=f"{item_name}_{barcode_id}.png",
+                        mime="image/png",
+                        key=f"download_device_{item_id}",
+                    ):
+                        record_download_history(item_name, barcode_id, st.session_state.username)
 
     # --- SECTION 1.5: 24-STICKER A4 GRID PRINT (63.5mm x 33.9mm, 3x8) ---
     elif menu == "🖨️ Print 24-Sticker A4 (63.5x33.9mm)":
         st.title("🖨️ Print 24-Sticker A4 Sheet (63.5mm × 33.9mm)")
-        st.write("Pehle sticker aur boxes chunein — ya 'Sab Barcodes' mode mein sab barcodes dekhein aur kisi bhi box par apna barcode lagayein.")
+        st.write("Pehle sticker aur boxes chunein — kisi bhi sticker ya box par click karke print karein.")
         st.markdown("---")
 
         conn = get_db_connection()
@@ -1269,9 +1443,6 @@ else:
                 if filtered_df.empty:
                     st.info("Koi matching barcode nahi mila.")
                 else:
-                    all_labels = list(label_to_key.keys())
-                    default_first_label = all_labels[0]
-
                     with st.expander("🧩 Mixed 24-Box Sheet (Alag-Alag Barcodes Ek Hi Sheet Par)", expanded=True):
                         c_fill_from, c_fill_to = st.columns(2)
                         with c_fill_from:
@@ -1327,33 +1498,18 @@ else:
                         )
 
                     st.markdown("---")
-                    st.subheader("🏷️ Sab Barcodes Ki List")
+                    st.subheader("🏷️ Sab Barcodes (Jis Sticker Par Click Karenge Wahi Print Hoga)")
+                    clickable_all = []
                     for _, row in filtered_df.iterrows():
-                        r_id = row["id"]
                         r_name = str(row["item_name"])
                         r_barcode = str(row["barcode_id"])
-                        r_price = row["price"]
-                        r_slot = row["slot_category"]
-
-                        st.markdown(f"**{r_name.upper()}** — Barcode ID: `{r_barcode}` | Price: {r_price or 'N/A'} | Slot: {r_slot or 'N/A'}")
                         r_img_io = generate_custom_barcode_image(r_name, r_barcode)
-                        st.image(r_img_io, width=280)
-
-                        c_b_dl, c_b_pr = st.columns(2)
-                        with c_b_dl:
-                            if st.download_button(
-                                label="💾 Download PNG",
-                                data=r_img_io,
-                                file_name=f"{r_name}_{r_barcode}.png",
-                                mime="image/png",
-                                key=f"all_list_dl_{r_id}",
-                            ):
-                                record_download_history(r_name, r_barcode, st.session_state.username)
-                        with c_b_pr:
-                            if st.button("🖨️ Print Single Sticker", key=f"all_list_pr_{r_id}"):
-                                record_download_history(r_name, r_barcode, st.session_state.username)
-                                html(build_print_html(r_img_io), height=120)
-                        st.markdown("---")
+                        clickable_all.append({
+                            "name": r_name,
+                            "barcode": r_barcode,
+                            "b64": base64.b64encode(r_img_io.getvalue()).decode("utf-8"),
+                        })
+                    render_clickable_barcode_list(clickable_all, key_prefix="all_stickers_click")
 
     # --- SECTION 2: APP DOWNLOADED HISTORY ---
     elif menu == "📂 App Downloaded History":
@@ -1584,22 +1740,24 @@ else:
 
             try:
                 gen_img_io = generate_custom_barcode_image(prev_name, prev_barcode)
-                st.image(gen_img_io, width=280)
+                st.caption("💡 Sticker par click karke seedha print karein:")
+                render_clickable_barcode_list(
+                    [{
+                        "name": prev_name,
+                        "barcode": prev_barcode,
+                        "b64": base64.b64encode(gen_img_io.getvalue()).decode("utf-8"),
+                    }],
+                    key_prefix="gen_preview",
+                )
 
-                col_b1, col_b2 = st.columns(2)
-                with col_b1:
-                    if st.download_button(
-                        label="💾 Download Sticker PNG",
-                        data=gen_img_io,
-                        file_name=f"{prev_name}_{prev_barcode}.png",
-                        mime="image/png",
-                        key=f"gen_dl_{prev_barcode}",
-                    ):
-                        record_download_history(prev_name, prev_barcode, st.session_state.username)
-                with col_b2:
-                    if st.button("🖨️ Direct Print Sticker", type="primary", key=f"gen_pr_{prev_barcode}"):
-                        record_download_history(prev_name, prev_barcode, st.session_state.username)
-                        html(build_print_html(gen_img_io), height=120)
+                if st.download_button(
+                    label="💾 Download Sticker PNG",
+                    data=gen_img_io,
+                    file_name=f"{prev_name}_{prev_barcode}.png",
+                    mime="image/png",
+                    key=f"gen_dl_{prev_barcode}",
+                ):
+                    record_download_history(prev_name, prev_barcode, st.session_state.username)
             except Exception as e:
                 st.error(f"Error rendering barcode: {e}")
 
