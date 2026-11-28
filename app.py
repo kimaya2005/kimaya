@@ -218,7 +218,7 @@ def record_download_history(item_name, barcode_id, username):
         pass
 
 def inject_print_css():
-    """Hides Streamlit chrome/controls during Ctrl+P so the sticker sheet prints cleanly."""
+    """On Ctrl+P, hides all Streamlit UI/headers/text and leaves only the active sticker sheet iframe on 1 A4 page."""
     st.markdown(
         """
         <style>
@@ -227,11 +227,25 @@ def inject_print_css():
                 size: A4 portrait;
                 margin: 0;
             }
+            html, body {
+                width: 210mm !important;
+                height: 297mm !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                overflow: hidden !important;
+                background: #ffffff !important;
+            }
+            body * {
+                visibility: hidden !important;
+            }
             [data-testid="stSidebar"],
             [data-testid="stHeader"],
             [data-testid="stToolbar"],
             [data-testid="stDecoration"],
             [data-testid="stStatusWidget"],
+            [data-testid="stAppViewBlockSpacer"],
+            hr,
+            .stMarkdown,
             .stAlert,
             .stButton,
             .stDownloadButton,
@@ -239,29 +253,46 @@ def inject_print_css():
             .stNumberInput,
             .stSelectbox,
             .stRadio,
-            .stTabs [data-baseweb="tab-list"] {
+            .stTabs {
                 display: none !important;
             }
-            .main .block-container {
-                max-width: 210mm !important;
-                width: 210mm !important;
-                padding: 0 !important;
-                margin: 0 !important;
-            }
-            .element-container:has(> .stHtml),
+            [data-testid="stMain"],
+            [data-testid="stMainBlockContainer"],
+            .main,
+            .main .block-container,
+            [data-testid="stVerticalBlock"],
+            .element-container,
             .stHtml {
+                visibility: visible !important;
+                position: static !important;
                 width: 210mm !important;
+                max-width: 210mm !important;
                 margin: 0 !important;
                 padding: 0 !important;
+                border: none !important;
+                box-shadow: none !important;
+                background: transparent !important;
             }
             iframe {
+                visibility: visible !important;
+                position: fixed !important;
+                top: 0 !important;
+                left: 0 !important;
                 width: 210mm !important;
-                height: 294mm !important;
-                max-height: 294mm !important;
+                height: 296mm !important;
+                max-height: 296mm !important;
+                border: none !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                background: #ffffff !important;
+                z-index: 999999 !important;
                 page-break-inside: avoid !important;
                 break-inside: avoid !important;
                 page-break-after: avoid !important;
                 break-after: avoid !important;
+            }
+            iframe * {
+                visibility: visible !important;
             }
         }
         </style>
@@ -481,7 +512,7 @@ def generate_vendor_custom_sticker(
     out_io.seek(0)
     return out_io
 
-def build_a4_8_grid_html(slots_8, auto_print=False):
+def build_a4_8_grid_html(slots_8, top_offset_mm=8.5, left_offset_mm=0.0, auto_print=False):
     """slots_8: list of 8 dicts {'name','barcode','b64'} or None (2 cols x 4 rows, 105mm x 70mm)."""
     cells_html = []
     for idx in range(8):
@@ -531,14 +562,14 @@ def build_a4_8_grid_html(slots_8, auto_print=False):
                 margin: 0;
                 padding: 0;
                 width: 210mm;
-                height: 294mm;
+                height: 296mm;
                 overflow: hidden;
                 background: #ffffff;
             }}
             .a4-sheet {{
                 width: 210mm;
                 height: 280mm;
-                margin: 8.5mm 0 0 0;
+                margin: {top_offset_mm}mm 0 0 {left_offset_mm}mm;
                 background: white;
                 display: grid;
                 grid-template-columns: repeat(2, 105mm);
@@ -571,11 +602,11 @@ def build_a4_8_grid_html(slots_8, auto_print=False):
     </html>
     """
 
-def render_interactive_8_sheet_and_print(sticker_item, enabled_box_indices):
+def render_interactive_8_sheet_and_print(sticker_item, enabled_box_indices, top_offset_mm=8.5, left_offset_mm=0.0):
     """
     Renders an interactive 8-box (2x4) A4 sheet (105mm x 70mm per sticker) where clicking
     any box (#1 to #8) places or removes the sticker so half-used sheets can be reused,
-    and supports both the Print button and Ctrl+P.
+    and both Ctrl+P and Print Selected print ONLY the stickers cleanly on 1 A4 page.
     """
     item_json = json.dumps(sticker_item)
     enabled_json = json.dumps(sorted(list(set(enabled_box_indices))))
@@ -594,6 +625,9 @@ def render_interactive_8_sheet_and_print(sticker_item, enabled_box_indices):
             padding: 6px 0 12px 0;
             font-family: 'Segoe UI', Arial, sans-serif;
             background: transparent;
+        }}
+        .no-print-ui {{
+            display: block;
         }}
         .top-bar {{
             display: flex;
@@ -698,11 +732,11 @@ def render_interactive_8_sheet_and_print(sticker_item, enabled_box_indices):
                 margin: 0 !important;
                 padding: 0 !important;
                 width: 210mm !important;
-                height: 294mm !important;
+                height: 296mm !important;
                 overflow: hidden !important;
                 background: #ffffff !important;
             }}
-            .top-bar {{
+            .no-print-ui, .top-bar {{
                 display: none !important;
             }}
             .sheet-wrapper {{
@@ -710,7 +744,7 @@ def render_interactive_8_sheet_and_print(sticker_item, enabled_box_indices):
                 max-width: 210mm !important;
                 height: 280mm !important;
                 aspect-ratio: auto !important;
-                margin: 8.5mm 0 0 0 !important;
+                margin: {top_offset_mm}mm 0 0 {left_offset_mm}mm !important;
                 border: none !important;
                 box-shadow: none !important;
                 border-radius: 0 !important;
@@ -737,7 +771,7 @@ def render_interactive_8_sheet_and_print(sticker_item, enabled_box_indices):
     </style>
     </head>
     <body>
-        <div class="top-bar">
+        <div class="no-print-ui top-bar">
             <div class="info" id="selectionSummary8">Selected: 0 / 8 — Click any box (#1–#8) to add/remove</div>
             <div class="btn-group">
                 <button type="button" class="action-btn btn-fill" onclick="fillAllBoxes8()">Select All 8</button>
@@ -751,6 +785,8 @@ def render_interactive_8_sheet_and_print(sticker_item, enabled_box_indices):
         <script>
             const stickerItem = {item_json};
             let selectedSet8 = new Set({enabled_json});
+            const topOff8 = {top_offset_mm};
+            const leftOff8 = {left_offset_mm};
 
             function updateSummary8() {{
                 const arr = Array.from(selectedSet8).sort((a, b) => a - b);
@@ -829,7 +865,7 @@ def render_interactive_8_sheet_and_print(sticker_item, enabled_box_indices):
 
                 const printWin = window.open("", "_blank", "width=850,height=1100");
                 if (!printWin) {{
-                    alert("Browser ne popup block kiya hai. Please allow popups for this site ya Download 1-Page A4 Print File (.html) use karein.");
+                    alert("Browser ne popup block kiya hai. Please allow popups for this site ya Download 8-Sticker A4 Print File (.html) use karein.");
                     return;
                 }}
 
@@ -852,14 +888,14 @@ def render_interactive_8_sheet_and_print(sticker_item, enabled_box_indices):
                                 margin: 0;
                                 padding: 0;
                                 width: 210mm;
-                                height: 294mm;
+                                height: 296mm;
                                 overflow: hidden;
                                 background: #ffffff;
                             }}
                             .sheet {{
                                 width: 210mm;
                                 height: 280mm;
-                                margin: 8.5mm 0 0 0;
+                                margin: ${{topOff8}}mm 0 0 ${{leftOff8}}mm;
                                 display: grid;
                                 grid-template-columns: repeat(2, 105mm);
                                 grid-template-rows: repeat(4, 70mm);
@@ -903,7 +939,7 @@ def render_interactive_8_sheet_and_print(sticker_item, enabled_box_indices):
     """
     html(component_html, height=960)
 
-def render_clickable_vendor_sticker(item, key_prefix="vendor_click"):
+def render_clickable_vendor_sticker(item, key_prefix="vendor_click", top_offset_mm=8.5, left_offset_mm=0.0):
     """Renders a single 105mm x 70mm custom sticker card that prints directly on click."""
     if not item:
         return
@@ -977,6 +1013,8 @@ def render_clickable_vendor_sticker(item, key_prefix="vendor_click"):
         </div>
         <script>
             const vItem_{key_prefix} = {payload};
+            const topOffV_{key_prefix} = {top_offset_mm};
+            const leftOffV_{key_prefix} = {left_offset_mm};
             document.getElementById("img_{key_prefix}").src = "data:image/png;base64," + vItem_{key_prefix}.b64;
             document.getElementById("meta_{key_prefix}").innerText = "ID: " + vItem_{key_prefix}.barcode;
 
@@ -1005,14 +1043,14 @@ def render_clickable_vendor_sticker(item, key_prefix="vendor_click"):
                                 margin: 0;
                                 padding: 0;
                                 width: 210mm;
-                                height: 294mm;
+                                height: 296mm;
                                 overflow: hidden;
                                 background: #ffffff;
                             }}
                             .sheet {{
                                 width: 210mm;
                                 height: 280mm;
-                                margin: 8.5mm 0 0 0;
+                                margin: ${{topOffV_{key_prefix}}}mm 0 0 ${{leftOffV_{key_prefix}}}mm;
                                 display: grid;
                                 grid-template-columns: repeat(2, 105mm);
                                 grid-template-rows: repeat(4, 70mm);
@@ -1057,7 +1095,7 @@ def render_clickable_vendor_sticker(item, key_prefix="vendor_click"):
     """
     html(comp_html, height=345)
 
-def build_a4_24_grid_html(slots_data, auto_print=False):
+def build_a4_24_grid_html(slots_data, top_offset_mm=12.0, left_offset_mm=9.75, auto_print=False):
     """slots_data: list of 24 dicts {'name','barcode','b64'} or None (3 cols x 8 rows, 63.5mm x 33.9mm)."""
     cells_html = []
     for idx in range(24):
@@ -1107,33 +1145,33 @@ def build_a4_24_grid_html(slots_data, auto_print=False):
                 margin: 0;
                 padding: 0;
                 width: 210mm;
-                height: 294mm;
+                height: 296mm;
                 overflow: hidden;
                 background: #ffffff;
             }}
             .a4-sheet {{
                 width: 190.5mm;
-                height: 270mm;
-                margin: 12mm 9.75mm 0 9.75mm;
+                height: 271.2mm;
+                margin: {top_offset_mm}mm 0 0 {left_offset_mm}mm;
                 background: white;
                 display: grid;
                 grid-template-columns: repeat(3, 63.5mm);
-                grid-template-rows: repeat(8, 33.75mm);
+                grid-template-rows: repeat(8, 33.9mm);
                 page-break-after: avoid;
                 break-after: avoid;
             }}
             .label-cell {{
                 width: 63.5mm;
-                height: 33.75mm;
+                height: 33.9mm;
                 display: flex;
                 justify-content: center;
                 align-items: center;
-                padding: 0.5mm;
+                padding: 0.4mm;
                 overflow: hidden;
             }}
             .label-cell img {{
-                width: 62.5mm;
-                height: 32.8mm;
+                width: 62.7mm;
+                height: 33.1mm;
                 object-fit: contain;
             }}
         </style>
@@ -1147,11 +1185,18 @@ def build_a4_24_grid_html(slots_data, auto_print=False):
     </html>
     """
 
-def render_interactive_24_sheet_and_print(items_catalog, box_item_map, enabled_box_indices, default_brush_key=None):
+def render_interactive_24_sheet_and_print(
+    items_catalog,
+    box_item_map,
+    enabled_box_indices,
+    default_brush_key=None,
+    top_offset_mm=12.0,
+    left_offset_mm=9.75,
+):
     """
-    Renders an interactive 24-box (3x8) A4 sticker sheet where clicking ANY box (#1 to #24)
-    immediately places the active sticker into that box (or removes it if already active),
-    and supports both the Print button and Ctrl+P cleanly on 1 A4 page.
+    Renders an interactive 24-box (3x8) A4 sticker sheet (63.5mm x 33.9mm per sticker) where clicking
+    any box (#1 to #24) places or removes the sticker, and BOTH Ctrl+P and Print Selected print
+    ONLY the sticker sheet cleanly on 1 A4 page without any headings/controls.
     """
     catalog_json = json.dumps(items_catalog)
     box_map_json = json.dumps(box_item_map)
@@ -1173,6 +1218,9 @@ def render_interactive_24_sheet_and_print(items_catalog, box_item_map, enabled_b
             padding: 6px 0 12px 0;
             font-family: 'Segoe UI', Arial, sans-serif;
             background: transparent;
+        }}
+        .no-print-ui {{
+            display: block;
         }}
         .top-bar {{
             display: flex;
@@ -1241,7 +1289,7 @@ def render_interactive_24_sheet_and_print(items_catalog, box_item_map, enabled_b
             aspect-ratio: 210 / 297;
             border: 1px solid #cbd5e1;
             background: #ffffff;
-            padding: 4.1% 4.6%;
+            padding: 4.04% 4.64%;
             display: grid;
             grid-template-columns: repeat(3, 1fr);
             grid-template-rows: repeat(8, 1fr);
@@ -1249,7 +1297,7 @@ def render_interactive_24_sheet_and_print(items_catalog, box_item_map, enabled_b
             border-radius: 4px;
         }}
         .box-cell {{
-            border: 1px dashed #94a3b8;
+            border: 1.5px dashed #94a3b8;
             display: flex;
             justify-content: center;
             align-items: center;
@@ -1298,31 +1346,31 @@ def render_interactive_24_sheet_and_print(items_catalog, box_item_map, enabled_b
                 margin: 0 !important;
                 padding: 0 !important;
                 width: 210mm !important;
-                height: 294mm !important;
+                height: 296mm !important;
                 overflow: hidden !important;
                 background: #ffffff !important;
             }}
-            .brush-bar, .top-bar {{
+            .no-print-ui, .brush-bar, .top-bar {{
                 display: none !important;
             }}
             .sheet-wrapper {{
                 width: 190.5mm !important;
                 max-width: 190.5mm !important;
-                height: 270mm !important;
+                height: 271.2mm !important;
                 aspect-ratio: auto !important;
-                margin: 12mm 9.75mm 0 9.75mm !important;
+                margin: {top_offset_mm}mm 0 0 {left_offset_mm}mm !important;
                 padding: 0 !important;
                 border: none !important;
                 box-shadow: none !important;
                 border-radius: 0 !important;
                 grid-template-columns: repeat(3, 63.5mm) !important;
-                grid-template-rows: repeat(8, 33.75mm) !important;
+                grid-template-rows: repeat(8, 33.9mm) !important;
             }}
             .box-cell {{
                 width: 63.5mm !important;
-                height: 33.75mm !important;
+                height: 33.9mm !important;
                 border: none !important;
-                padding: 0.5mm !important;
+                padding: 0.4mm !important;
             }}
             .box-cell:not(.selected) img {{
                 display: none !important;
@@ -1331,20 +1379,20 @@ def render_interactive_24_sheet_and_print(items_catalog, box_item_map, enabled_b
                 display: none !important;
             }}
             .sticker-img {{
-                width: 62.5mm !important;
-                height: 32.8mm !important;
+                width: 62.7mm !important;
+                height: 33.1mm !important;
             }}
         }}
     </style>
     </head>
     <body>
-        <div class="brush-bar">
+        <div class="no-print-ui brush-bar">
             <span>🎯 Click karne par kaunsa sticker lage:</span>
             <select id="activeBrushSelect" onchange="onBrushChange()"></select>
             <span>(Kisi bhi box #1–#24 par seedha click karein)</span>
         </div>
 
-        <div class="top-bar">
+        <div class="no-print-ui top-bar">
             <div class="info" id="selectionSummary">Selected: 0 / 24 — Click any box (#1–#24) to add/remove</div>
             <div class="btn-group">
                 <button type="button" class="action-btn btn-clear" onclick="clearAllBoxes()">Clear Boxes</button>
@@ -1359,6 +1407,8 @@ def render_interactive_24_sheet_and_print(items_catalog, box_item_map, enabled_b
             const boxItemMap = Object.assign({{}}, {box_map_json});
             let selectedSet = new Set({enabled_json});
             let activeBrushKey = {brush_json};
+            const topOff24 = {top_offset_mm};
+            const leftOff24 = {left_offset_mm};
 
             function initBrushDropdown() {{
                 const sel = document.getElementById("activeBrushSelect");
@@ -1486,30 +1536,30 @@ def render_interactive_24_sheet_and_print(items_catalog, box_item_map, enabled_b
                                 margin: 0;
                                 padding: 0;
                                 width: 210mm;
-                                height: 294mm;
+                                height: 296mm;
                                 overflow: hidden;
                                 background: #ffffff;
                             }}
                             .sheet {{
                                 width: 190.5mm;
-                                height: 270mm;
-                                margin: 12mm 9.75mm 0 9.75mm;
+                                height: 271.2mm;
+                                margin: ${{topOff24}}mm 0 0 ${{leftOff24}}mm;
                                 display: grid;
                                 grid-template-columns: repeat(3, 63.5mm);
-                                grid-template-rows: repeat(8, 33.75mm);
+                                grid-template-rows: repeat(8, 33.9mm);
                             }}
                             .cell {{
                                 width: 63.5mm;
-                                height: 33.75mm;
+                                height: 33.9mm;
                                 display: flex;
                                 justify-content: center;
                                 align-items: center;
-                                padding: 0.5mm;
+                                padding: 0.4mm;
                                 overflow: hidden;
                             }}
                             .cell img {{
-                                width: 62.5mm;
-                                height: 32.8mm;
+                                width: 62.7mm;
+                                height: 33.1mm;
                                 object-fit: contain;
                             }}
                         </style>
@@ -1538,7 +1588,7 @@ def render_interactive_24_sheet_and_print(items_catalog, box_item_map, enabled_b
     """
     html(component_html, height=1110)
 
-def render_clickable_barcode_list(items_list, key_prefix="bc_click"):
+def render_clickable_barcode_list(items_list, key_prefix="bc_click", top_offset_mm=12.0, left_offset_mm=9.75):
     """
     Renders each barcode as a clickable sticker card: clicking any sticker opens a clean
     single-sticker print window for that exact sticker (no separate 'Print Single Sticker' button).
@@ -1614,6 +1664,8 @@ def render_clickable_barcode_list(items_list, key_prefix="bc_click"):
         <script>
             const listData_{key_prefix} = {payload};
             const container_{key_prefix} = document.getElementById("grid_{key_prefix}");
+            const topOffC_{key_prefix} = {top_offset_mm};
+            const leftOffC_{key_prefix} = {left_offset_mm};
 
             function printClickedSticker(item) {{
                 const win = window.open("", "_blank", "width=750,height=600");
@@ -1640,29 +1692,29 @@ def render_clickable_barcode_list(items_list, key_prefix="bc_click"):
                                 margin: 0;
                                 padding: 0;
                                 width: 210mm;
-                                height: 294mm;
+                                height: 296mm;
                                 overflow: hidden;
                                 background: #ffffff;
                             }}
                             .sheet {{
                                 width: 190.5mm;
-                                height: 270mm;
-                                margin: 12mm 9.75mm 0 9.75mm;
+                                height: 271.2mm;
+                                margin: ${{topOffC_{key_prefix}}}mm 0 0 ${{leftOffC_{key_prefix}}}mm;
                                 display: grid;
                                 grid-template-columns: repeat(3, 63.5mm);
-                                grid-template-rows: repeat(8, 33.75mm);
+                                grid-template-rows: repeat(8, 33.9mm);
                             }}
                             .cell {{
                                 width: 63.5mm;
-                                height: 33.75mm;
+                                height: 33.9mm;
                                 display: flex;
                                 justify-content: center;
                                 align-items: center;
-                                padding: 0.5mm;
+                                padding: 0.4mm;
                             }}
                             .cell img {{
-                                width: 62.5mm;
-                                height: 32.8mm;
+                                width: 62.7mm;
+                                height: 33.1mm;
                                 object-fit: contain;
                             }}
                         </style>
@@ -2219,6 +2271,28 @@ else:
                     horizontal=True,
                     key="a4_24_view_mode",
                 )
+
+                with st.expander("📐 Sticker Sheet Margin Alignment (Agar print thoda upar/neeche ya left/right aaye)"):
+                    c_off1, c_off2 = st.columns(2)
+                    with c_off1:
+                        top_off_24 = st.number_input(
+                            "Top Margin (mm)",
+                            min_value=0.0,
+                            max_value=30.0,
+                            value=12.0,
+                            step=0.5,
+                            key="top_off_24_mm",
+                        )
+                    with c_off2:
+                        left_off_24 = st.number_input(
+                            "Left Margin (mm)",
+                            min_value=0.0,
+                            max_value=30.0,
+                            value=9.75,
+                            step=0.5,
+                            key="left_off_24_mm",
+                        )
+
                 st.markdown("---")
 
                 all_catalog = {}
@@ -2283,7 +2357,12 @@ else:
                             record_download_history(p_name, p_barcode, st.session_state.username)
 
                     with col_dl2:
-                        printable_a4_html = build_a4_24_grid_html(slots_24, auto_print=False)
+                        printable_a4_html = build_a4_24_grid_html(
+                            slots_24,
+                            top_offset_mm=float(top_off_24),
+                            left_offset_mm=float(left_off_24),
+                            auto_print=False,
+                        )
                         if st.download_button(
                             label="📄 Download 1-Page A4 Print File (.html)",
                             data=printable_a4_html.encode("utf-8"),
@@ -2299,6 +2378,8 @@ else:
                         box_item_map=box_item_map,
                         enabled_box_indices=parsed_boxes,
                         default_brush_key=active_key,
+                        top_offset_mm=float(top_off_24),
+                        left_offset_mm=float(left_off_24),
                     )
 
                     st.info("💡 **Zero Waste Tip:** Agar `#1` se `#6` pehle print ho chuke hain, toh **Clear Boxes** dabayein aur seedha **`#7`, `#8`, `#9`...** par click karein — `#1` se `#6` blank rahenge aur wahi half page reuse ho jayega.")
@@ -2356,7 +2437,12 @@ else:
                                 if k_val and k_val in all_catalog:
                                     slots_mixed[b_num - 1] = all_catalog[k_val]
 
-                            mixed_html = build_a4_24_grid_html(slots_mixed, auto_print=False)
+                            mixed_html = build_a4_24_grid_html(
+                                slots_mixed,
+                                top_offset_mm=float(top_off_24),
+                                left_offset_mm=float(left_off_24),
+                                auto_print=False,
+                            )
                             st.download_button(
                                 label="📄 Download Mixed 1-Page A4 Print File (.html)",
                                 data=mixed_html.encode("utf-8"),
@@ -2370,6 +2456,8 @@ else:
                                 box_item_map=mixed_map,
                                 enabled_box_indices=mixed_enabled,
                                 default_brush_key=filtered_keys[0] if filtered_keys else None,
+                                top_offset_mm=float(top_off_24),
+                                left_offset_mm=float(left_off_24),
                             )
 
                         st.markdown("---")
@@ -2384,7 +2472,12 @@ else:
                                 "barcode": r_barcode,
                                 "b64": base64.b64encode(r_img_io.getvalue()).decode("utf-8"),
                             })
-                        render_clickable_barcode_list(clickable_all, key_prefix="all_stickers_click")
+                        render_clickable_barcode_list(
+                            clickable_all,
+                            key_prefix="all_stickers_click",
+                            top_offset_mm=float(top_off_24),
+                            left_offset_mm=float(left_off_24),
+                        )
 
         with b_tab_create:
             st.subheader("➕ Naya Barcode Generate Karein")
@@ -2682,6 +2775,27 @@ else:
                 key="vendor_folder_search",
             ).strip().lower()
 
+            with st.expander("📐 A4-8 Sheet Margin Alignment (Agar print thoda upar/neeche ya left/right aaye)"):
+                cv1, cv2 = st.columns(2)
+                with cv1:
+                    top_off_8 = st.number_input(
+                        "Top Margin (mm)",
+                        min_value=0.0,
+                        max_value=30.0,
+                        value=8.5,
+                        step=0.5,
+                        key="top_off_8_mm",
+                    )
+                with cv2:
+                    left_off_8 = st.number_input(
+                        "Left Margin (mm)",
+                        min_value=0.0,
+                        max_value=30.0,
+                        value=0.0,
+                        step=0.5,
+                        key="left_off_8_mm",
+                    )
+
             conn = get_db_connection()
             v_df = pd.read_sql_query(
                 """
@@ -2764,7 +2878,12 @@ else:
                         key=f"dl_vf_png_{sel_v_id}",
                     )
                 with col_f2:
-                    vf_8_html = build_a4_8_grid_html([sel_v_item] * 8, auto_print=False)
+                    vf_8_html = build_a4_8_grid_html(
+                        [sel_v_item] * 8,
+                        top_offset_mm=float(top_off_8),
+                        left_offset_mm=float(left_off_8),
+                        auto_print=False,
+                    )
                     st.download_button(
                         label="📄 Download 8-Sticker A4 Print File (.html)",
                         data=vf_8_html.encode("utf-8"),
@@ -2777,13 +2896,20 @@ else:
                 render_interactive_8_sheet_and_print(
                     sticker_item=sel_v_item,
                     enabled_box_indices=[1],
+                    top_offset_mm=float(top_off_8),
+                    left_offset_mm=float(left_off_8),
                 )
 
                 st.markdown("---")
                 st.subheader("🗂️ Sab Saved Vendor Barcodes (Click karke print karein)")
                 for rid_item, it_data in v_items_by_id.items():
                     st.markdown(f"**#{rid_item} — {it_data['name']}** (`{it_data['barcode']}`)")
-                    render_clickable_vendor_sticker(it_data, key_prefix=f"vf_card_{rid_item}")
+                    render_clickable_vendor_sticker(
+                        it_data,
+                        key_prefix=f"vf_card_{rid_item}",
+                        top_offset_mm=float(top_off_8),
+                        left_offset_mm=float(left_off_8),
+                    )
 
         with tab_edit_del:
             st.subheader("✏️ Edit or Delete Saved Vendor Barcode")
