@@ -218,7 +218,7 @@ def record_download_history(item_name, barcode_id, username):
         pass
 
 def inject_print_css():
-    """Hides non-sheet Streamlit chrome/text on Ctrl+P while keeping iframe visible."""
+    """Hides non-sheet Streamlit UI/headings on Ctrl+P while keeping sticker sheet iframe visible."""
     st.markdown(
         """
         <style>
@@ -233,6 +233,8 @@ def inject_print_css():
             [data-testid="stDecoration"],
             [data-testid="stStatusWidget"],
             [data-testid="stAppViewBlockSpacer"],
+            [data-testid="stHeading"],
+            h1, h2, h3, h4, h5, h6,
             hr,
             .stMarkdown,
             .stAlert,
@@ -559,6 +561,7 @@ def build_a4_8_grid_html(slots_8, top_offset_mm=8.5, left_offset_mm=0.0, auto_pr
             .label-cell {{
                 width: 105mm;
                 height: 70mm;
+                border: 1px dashed #cbd5e1;
                 display: flex;
                 justify-content: center;
                 align-items: center;
@@ -584,7 +587,7 @@ def render_interactive_8_sheet_and_print(sticker_item, enabled_box_indices, top_
     """
     Renders an interactive 8-box (2x4) A4 sheet (105mm x 70mm per sticker) where clicking
     any box (#1 to #8) places or removes the sticker so half-used sheets can be reused,
-    and both Ctrl+P and Print Selected print cleanly on 1 A4 page.
+    and both Ctrl+P and Print Selected show the sticker sheet boxes cleanly on 1 A4 page.
     """
     item_json = json.dumps(sticker_item)
     enabled_json = json.dumps(sorted(list(set(enabled_box_indices))))
@@ -718,7 +721,7 @@ def render_interactive_8_sheet_and_print(sticker_item, enabled_box_indices, top_
                 height: 280mm !important;
                 aspect-ratio: auto !important;
                 margin: {top_offset_mm}mm 0 0 {left_offset_mm}mm !important;
-                border: none !important;
+                border: 1px solid #cbd5e1 !important;
                 box-shadow: none !important;
                 border-radius: 0 !important;
                 grid-template-columns: repeat(2, 105mm) !important;
@@ -727,8 +730,11 @@ def render_interactive_8_sheet_and_print(sticker_item, enabled_box_indices, top_
             .box-cell {{
                 width: 105mm !important;
                 height: 70mm !important;
-                border: none !important;
+                border: 1px dashed #cbd5e1 !important;
                 padding: 1mm !important;
+            }}
+            .box-cell.selected {{
+                border: 1.5px solid #334155 !important;
             }}
             .box-cell:not(.selected) img {{
                 display: none !important;
@@ -825,7 +831,7 @@ def render_interactive_8_sheet_and_print(sticker_item, enabled_box_indices, top_
                 for (let i = 1; i <= 8; i++) {{
                     if (selectedSet8.has(i) && stickerItem) {{
                         printableCount += 1;
-                        cellsMarkup += '<div class="cell"><img src="data:image/png;base64,' + stickerItem.b64 + '" /></div>';
+                        cellsMarkup += '<div class="cell active"><img src="data:image/png;base64,' + stickerItem.b64 + '" /></div>';
                     }} else {{
                         cellsMarkup += '<div class="cell"></div>';
                     }}
@@ -868,6 +874,7 @@ def render_interactive_8_sheet_and_print(sticker_item, enabled_box_indices, top_
                                 width: 210mm;
                                 height: 280mm;
                                 margin: ${{topOff8}}mm 0 0 ${{leftOff8}}mm;
+                                border: 1px solid #cbd5e1;
                                 display: grid;
                                 grid-template-columns: repeat(2, 105mm);
                                 grid-template-rows: repeat(4, 70mm);
@@ -875,10 +882,14 @@ def render_interactive_8_sheet_and_print(sticker_item, enabled_box_indices, top_
                             .cell {{
                                 width: 105mm;
                                 height: 70mm;
+                                border: 1px dashed #cbd5e1;
                                 display: flex;
                                 justify-content: center;
                                 align-items: center;
                                 padding: 1mm;
+                            }}
+                            .cell.active {{
+                                border: 1.5px solid #334155;
                             }}
                             .cell img {{
                                 width: 103mm;
@@ -908,7 +919,7 @@ def render_interactive_8_sheet_and_print(sticker_item, enabled_box_indices, top_
     </body>
     </html>
     """
-    html(component_html, height=960)
+    html(component_html, height=1060)
 
 def render_clickable_vendor_sticker(item, key_prefix="vendor_click", top_offset_mm=8.5, left_offset_mm=0.0):
     """Renders a single 105mm x 70mm custom sticker card that prints directly on click."""
@@ -1021,6 +1032,7 @@ def render_clickable_vendor_sticker(item, key_prefix="vendor_click", top_offset_
                                 width: 210mm;
                                 height: 280mm;
                                 margin: ${{topOffV_{key_prefix}}}mm 0 0 ${{leftOffV_{key_prefix}}}mm;
+                                border: 1px solid #cbd5e1;
                                 display: grid;
                                 grid-template-columns: repeat(2, 105mm);
                                 grid-template-rows: repeat(4, 70mm);
@@ -1028,10 +1040,14 @@ def render_clickable_vendor_sticker(item, key_prefix="vendor_click", top_offset_
                             .cell {{
                                 width: 105mm;
                                 height: 70mm;
+                                border: 1px dashed #cbd5e1;
                                 display: flex;
                                 justify-content: center;
                                 align-items: center;
                                 padding: 1mm;
+                            }}
+                            .cell.active {{
+                                border: 1.5px solid #334155;
                             }}
                             .cell img {{
                                 width: 103mm;
@@ -1042,7 +1058,7 @@ def render_clickable_vendor_sticker(item, key_prefix="vendor_click", top_offset_
                     </head>
                     <body>
                         <div class="sheet">
-                            <div class="cell">
+                            <div class="cell active">
                                 <img src="data:image/png;base64,${{vItem_{key_prefix}.b64}}" />
                             </div>
                         </div>
@@ -1073,7 +1089,7 @@ def build_a4_24_grid_html(slots_data, top_offset_mm=12.0, left_offset_mm=9.75, a
         if slot:
             cells_html.append(
                 f"""
-                <div class="label-cell">
+                <div class="label-cell active">
                     <img src="data:image/png;base64,{slot['b64']}" />
                 </div>
                 """
@@ -1122,6 +1138,7 @@ def build_a4_24_grid_html(slots_data, top_offset_mm=12.0, left_offset_mm=9.75, a
                 width: 190.5mm;
                 height: 271.2mm;
                 margin: {top_offset_mm}mm 0 0 {left_offset_mm}mm;
+                border: 1px solid #cbd5e1;
                 background: white;
                 display: grid;
                 grid-template-columns: repeat(3, 63.5mm);
@@ -1132,10 +1149,14 @@ def build_a4_24_grid_html(slots_data, top_offset_mm=12.0, left_offset_mm=9.75, a
             .label-cell {{
                 width: 63.5mm;
                 height: 33.9mm;
+                border: 1px dashed #cbd5e1;
                 display: flex;
                 justify-content: center;
                 align-items: center;
                 padding: 0.4mm;
+            }}
+            .label-cell.active {{
+                border: 1.5px solid #334155;
             }}
             .label-cell img {{
                 width: 62.7mm;
@@ -1163,8 +1184,8 @@ def render_interactive_24_sheet_and_print(
 ):
     """
     Renders an interactive 24-box (3x8) A4 sticker sheet (63.5mm x 33.9mm per sticker) where clicking
-    any box (#1 to #24) places or removes the sticker, and BOTH Ctrl+P and Print Selected print
-    the sticker sheet cleanly on 1 A4 page.
+    any box (#1 to #24) places or removes the sticker, and BOTH Ctrl+P and Print Selected show
+    the sticker sheet boxes cleanly on 1 A4 page.
     """
     catalog_json = json.dumps(items_catalog)
     box_map_json = json.dumps(box_item_map)
@@ -1323,7 +1344,7 @@ def render_interactive_24_sheet_and_print(
                 aspect-ratio: auto !important;
                 margin: {top_offset_mm}mm 0 0 {left_offset_mm}mm !important;
                 padding: 0 !important;
-                border: none !important;
+                border: 1px solid #cbd5e1 !important;
                 box-shadow: none !important;
                 border-radius: 0 !important;
                 grid-template-columns: repeat(3, 63.5mm) !important;
@@ -1332,8 +1353,11 @@ def render_interactive_24_sheet_and_print(
             .box-cell {{
                 width: 63.5mm !important;
                 height: 33.9mm !important;
-                border: none !important;
+                border: 1px dashed #cbd5e1 !important;
                 padding: 0.4mm !important;
+            }}
+            .box-cell.selected {{
+                border: 1.5px solid #334155 !important;
             }}
             .box-cell:not(.selected) img {{
                 display: none !important;
@@ -1463,7 +1487,7 @@ def render_interactive_24_sheet_and_print(
                     const item = getItemForBox(i);
                     if (selectedSet.has(i) && item) {{
                         printableCount += 1;
-                        cellsMarkup += '<div class="cell"><img src="data:image/png;base64,' + item.b64 + '" /></div>';
+                        cellsMarkup += '<div class="cell active"><img src="data:image/png;base64,' + item.b64 + '" /></div>';
                     }} else {{
                         cellsMarkup += '<div class="cell"></div>';
                     }}
@@ -1506,6 +1530,7 @@ def render_interactive_24_sheet_and_print(
                                 width: 190.5mm;
                                 height: 271.2mm;
                                 margin: ${{topOff24}}mm 0 0 ${{leftOff24}}mm;
+                                border: 1px solid #cbd5e1;
                                 display: grid;
                                 grid-template-columns: repeat(3, 63.5mm);
                                 grid-template-rows: repeat(8, 33.9mm);
@@ -1513,10 +1538,14 @@ def render_interactive_24_sheet_and_print(
                             .cell {{
                                 width: 63.5mm;
                                 height: 33.9mm;
+                                border: 1px dashed #cbd5e1;
                                 display: flex;
                                 justify-content: center;
                                 align-items: center;
                                 padding: 0.4mm;
+                            }}
+                            .cell.active {{
+                                border: 1.5px solid #334155;
                             }}
                             .cell img {{
                                 width: 62.7mm;
@@ -1547,7 +1576,7 @@ def render_interactive_24_sheet_and_print(
     </body>
     </html>
     """
-    html(component_html, height=1110)
+    html(component_html, height=1140)
 
 def render_clickable_barcode_list(items_list, key_prefix="bc_click", top_offset_mm=12.0, left_offset_mm=9.75):
     """
@@ -1660,6 +1689,7 @@ def render_clickable_barcode_list(items_list, key_prefix="bc_click", top_offset_
                                 width: 190.5mm;
                                 height: 271.2mm;
                                 margin: ${{topOffC_{key_prefix}}}mm 0 0 ${{leftOffC_{key_prefix}}}mm;
+                                border: 1px solid #cbd5e1;
                                 display: grid;
                                 grid-template-columns: repeat(3, 63.5mm);
                                 grid-template-rows: repeat(8, 33.9mm);
@@ -1667,10 +1697,14 @@ def render_clickable_barcode_list(items_list, key_prefix="bc_click", top_offset_
                             .cell {{
                                 width: 63.5mm;
                                 height: 33.9mm;
+                                border: 1px dashed #cbd5e1;
                                 display: flex;
                                 justify-content: center;
                                 align-items: center;
                                 padding: 0.4mm;
+                            }}
+                            .cell.active {{
+                                border: 1.5px solid #334155;
                             }}
                             .cell img {{
                                 width: 62.7mm;
@@ -1681,7 +1715,7 @@ def render_clickable_barcode_list(items_list, key_prefix="bc_click", top_offset_
                     </head>
                     <body>
                         <div class="sheet">
-                            <div class="cell">
+                            <div class="cell active">
                                 <img src="data:image/png;base64,${{item.b64}}" />
                             </div>
                         </div>
