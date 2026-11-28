@@ -218,7 +218,7 @@ def record_download_history(item_name, barcode_id, username):
         pass
 
 def inject_print_css():
-    """On Ctrl+P, hides all Streamlit UI/headers/text and leaves only the active sticker sheet iframe on 1 A4 page."""
+    """Hides non-sheet Streamlit chrome/text on Ctrl+P while keeping iframe visible."""
     st.markdown(
         """
         <style>
@@ -226,17 +226,6 @@ def inject_print_css():
             @page {
                 size: A4 portrait;
                 margin: 0;
-            }
-            html, body {
-                width: 210mm !important;
-                height: 297mm !important;
-                margin: 0 !important;
-                padding: 0 !important;
-                overflow: hidden !important;
-                background: #ffffff !important;
-            }
-            body * {
-                visibility: hidden !important;
             }
             [data-testid="stSidebar"],
             [data-testid="stHeader"],
@@ -263,36 +252,27 @@ def inject_print_css():
             [data-testid="stVerticalBlock"],
             .element-container,
             .stHtml {
-                visibility: visible !important;
-                position: static !important;
                 width: 210mm !important;
                 max-width: 210mm !important;
                 margin: 0 !important;
                 padding: 0 !important;
                 border: none !important;
                 box-shadow: none !important;
-                background: transparent !important;
+                background: #ffffff !important;
             }
             iframe {
-                visibility: visible !important;
-                position: fixed !important;
-                top: 0 !important;
-                left: 0 !important;
+                display: block !important;
                 width: 210mm !important;
-                height: 296mm !important;
-                max-height: 296mm !important;
+                height: 294mm !important;
+                max-height: 294mm !important;
                 border: none !important;
                 margin: 0 !important;
                 padding: 0 !important;
                 background: #ffffff !important;
-                z-index: 999999 !important;
                 page-break-inside: avoid !important;
                 break-inside: avoid !important;
                 page-break-after: avoid !important;
                 break-after: avoid !important;
-            }
-            iframe * {
-                visibility: visible !important;
             }
         }
         </style>
@@ -562,8 +542,7 @@ def build_a4_8_grid_html(slots_8, top_offset_mm=8.5, left_offset_mm=0.0, auto_pr
                 margin: 0;
                 padding: 0;
                 width: 210mm;
-                height: 296mm;
-                overflow: hidden;
+                height: 294mm;
                 background: #ffffff;
             }}
             .a4-sheet {{
@@ -584,7 +563,6 @@ def build_a4_8_grid_html(slots_8, top_offset_mm=8.5, left_offset_mm=0.0, auto_pr
                 justify-content: center;
                 align-items: center;
                 padding: 1mm;
-                overflow: hidden;
             }}
             .label-cell img {{
                 width: 103mm;
@@ -606,7 +584,7 @@ def render_interactive_8_sheet_and_print(sticker_item, enabled_box_indices, top_
     """
     Renders an interactive 8-box (2x4) A4 sheet (105mm x 70mm per sticker) where clicking
     any box (#1 to #8) places or removes the sticker so half-used sheets can be reused,
-    and both Ctrl+P and Print Selected print ONLY the stickers cleanly on 1 A4 page.
+    and both Ctrl+P and Print Selected print cleanly on 1 A4 page.
     """
     item_json = json.dumps(sticker_item)
     enabled_json = json.dumps(sorted(list(set(enabled_box_indices))))
@@ -625,9 +603,6 @@ def render_interactive_8_sheet_and_print(sticker_item, enabled_box_indices, top_
             padding: 6px 0 12px 0;
             font-family: 'Segoe UI', Arial, sans-serif;
             background: transparent;
-        }}
-        .no-print-ui {{
-            display: block;
         }}
         .top-bar {{
             display: flex;
@@ -692,7 +667,6 @@ def render_interactive_8_sheet_and_print(sticker_item, enabled_box_indices, top_
             position: relative;
             user-select: none;
             transition: background 0.12s ease;
-            overflow: hidden;
         }}
         .box-cell:hover {{
             background: #f0fdf4;
@@ -732,11 +706,10 @@ def render_interactive_8_sheet_and_print(sticker_item, enabled_box_indices, top_
                 margin: 0 !important;
                 padding: 0 !important;
                 width: 210mm !important;
-                height: 296mm !important;
-                overflow: hidden !important;
+                height: 294mm !important;
                 background: #ffffff !important;
             }}
-            .no-print-ui, .top-bar {{
+            .top-bar {{
                 display: none !important;
             }}
             .sheet-wrapper {{
@@ -771,7 +744,7 @@ def render_interactive_8_sheet_and_print(sticker_item, enabled_box_indices, top_
     </style>
     </head>
     <body>
-        <div class="no-print-ui top-bar">
+        <div class="top-bar">
             <div class="info" id="selectionSummary8">Selected: 0 / 8 — Click any box (#1–#8) to add/remove</div>
             <div class="btn-group">
                 <button type="button" class="action-btn btn-fill" onclick="fillAllBoxes8()">Select All 8</button>
@@ -888,8 +861,7 @@ def render_interactive_8_sheet_and_print(sticker_item, enabled_box_indices, top_
                                 margin: 0;
                                 padding: 0;
                                 width: 210mm;
-                                height: 296mm;
-                                overflow: hidden;
+                                height: 294mm;
                                 background: #ffffff;
                             }}
                             .sheet {{
@@ -907,7 +879,6 @@ def render_interactive_8_sheet_and_print(sticker_item, enabled_box_indices, top_
                                 justify-content: center;
                                 align-items: center;
                                 padding: 1mm;
-                                overflow: hidden;
                             }}
                             .cell img {{
                                 width: 103mm;
@@ -1043,8 +1014,7 @@ def render_clickable_vendor_sticker(item, key_prefix="vendor_click", top_offset_
                                 margin: 0;
                                 padding: 0;
                                 width: 210mm;
-                                height: 296mm;
-                                overflow: hidden;
+                                height: 294mm;
                                 background: #ffffff;
                             }}
                             .sheet {{
@@ -1145,8 +1115,7 @@ def build_a4_24_grid_html(slots_data, top_offset_mm=12.0, left_offset_mm=9.75, a
                 margin: 0;
                 padding: 0;
                 width: 210mm;
-                height: 296mm;
-                overflow: hidden;
+                height: 294mm;
                 background: #ffffff;
             }}
             .a4-sheet {{
@@ -1167,7 +1136,6 @@ def build_a4_24_grid_html(slots_data, top_offset_mm=12.0, left_offset_mm=9.75, a
                 justify-content: center;
                 align-items: center;
                 padding: 0.4mm;
-                overflow: hidden;
             }}
             .label-cell img {{
                 width: 62.7mm;
@@ -1196,7 +1164,7 @@ def render_interactive_24_sheet_and_print(
     """
     Renders an interactive 24-box (3x8) A4 sticker sheet (63.5mm x 33.9mm per sticker) where clicking
     any box (#1 to #24) places or removes the sticker, and BOTH Ctrl+P and Print Selected print
-    ONLY the sticker sheet cleanly on 1 A4 page without any headings/controls.
+    the sticker sheet cleanly on 1 A4 page.
     """
     catalog_json = json.dumps(items_catalog)
     box_map_json = json.dumps(box_item_map)
@@ -1218,9 +1186,6 @@ def render_interactive_24_sheet_and_print(
             padding: 6px 0 12px 0;
             font-family: 'Segoe UI', Arial, sans-serif;
             background: transparent;
-        }}
-        .no-print-ui {{
-            display: block;
         }}
         .top-bar {{
             display: flex;
@@ -1306,7 +1271,6 @@ def render_interactive_24_sheet_and_print(
             position: relative;
             user-select: none;
             transition: background 0.12s ease;
-            overflow: hidden;
         }}
         .box-cell:hover {{
             background: #f0fdf4;
@@ -1346,11 +1310,10 @@ def render_interactive_24_sheet_and_print(
                 margin: 0 !important;
                 padding: 0 !important;
                 width: 210mm !important;
-                height: 296mm !important;
-                overflow: hidden !important;
+                height: 294mm !important;
                 background: #ffffff !important;
             }}
-            .no-print-ui, .brush-bar, .top-bar {{
+            .brush-bar, .top-bar {{
                 display: none !important;
             }}
             .sheet-wrapper {{
@@ -1386,13 +1349,13 @@ def render_interactive_24_sheet_and_print(
     </style>
     </head>
     <body>
-        <div class="no-print-ui brush-bar">
+        <div class="brush-bar">
             <span>🎯 Click karne par kaunsa sticker lage:</span>
             <select id="activeBrushSelect" onchange="onBrushChange()"></select>
             <span>(Kisi bhi box #1–#24 par seedha click karein)</span>
         </div>
 
-        <div class="no-print-ui top-bar">
+        <div class="top-bar">
             <div class="info" id="selectionSummary">Selected: 0 / 24 — Click any box (#1–#24) to add/remove</div>
             <div class="btn-group">
                 <button type="button" class="action-btn btn-clear" onclick="clearAllBoxes()">Clear Boxes</button>
@@ -1536,8 +1499,7 @@ def render_interactive_24_sheet_and_print(
                                 margin: 0;
                                 padding: 0;
                                 width: 210mm;
-                                height: 296mm;
-                                overflow: hidden;
+                                height: 294mm;
                                 background: #ffffff;
                             }}
                             .sheet {{
@@ -1555,7 +1517,6 @@ def render_interactive_24_sheet_and_print(
                                 justify-content: center;
                                 align-items: center;
                                 padding: 0.4mm;
-                                overflow: hidden;
                             }}
                             .cell img {{
                                 width: 62.7mm;
@@ -1692,8 +1653,7 @@ def render_clickable_barcode_list(items_list, key_prefix="bc_click", top_offset_
                                 margin: 0;
                                 padding: 0;
                                 width: 210mm;
-                                height: 296mm;
-                                overflow: hidden;
+                                height: 294mm;
                                 background: #ffffff;
                             }}
                             .sheet {{
