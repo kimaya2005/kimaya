@@ -522,7 +522,7 @@ def build_a4_8_grid_html(slots_8, auto_print=False):
 def render_interactive_8_sheet_and_print(sticker_item, enabled_box_indices):
     """
     Renders an interactive 8-box (2x4) A4 sheet (105mm x 70mm per sticker) where clicking
-    any box toggles selection and printing outputs a clean 1-page A4 sheet.
+    any box (#1 to #8) places or removes the sticker so half-used sheets can be reused.
     """
     item_json = json.dumps(sticker_item)
     enabled_json = json.dumps(sorted(list(set(enabled_box_indices))))
@@ -575,6 +575,10 @@ def render_interactive_8_sheet_and_print(sticker_item, enabled_box_indices):
             background: #e2e8f0;
             color: #1e293b;
         }}
+        .btn-fill {{
+            background: #dbeafe;
+            color: #1d4ed8;
+        }}
         .btn-print {{
             background: #16a34a;
             color: #ffffff;
@@ -592,7 +596,7 @@ def render_interactive_8_sheet_and_print(sticker_item, enabled_box_indices):
             border-radius: 4px;
         }}
         .box-cell {{
-            border: 1.5px solid #334155;
+            border: 1.5px dashed #94a3b8;
             display: flex;
             justify-content: center;
             align-items: center;
@@ -624,7 +628,8 @@ def render_interactive_8_sheet_and_print(sticker_item, enabled_box_indices):
         }}
         .box-empty-hint {{
             font-size: 12px;
-            color: #94a3b8;
+            color: #64748b;
+            font-weight: 500;
         }}
         .sticker-img {{
             width: 98%;
@@ -635,9 +640,10 @@ def render_interactive_8_sheet_and_print(sticker_item, enabled_box_indices):
     </head>
     <body>
         <div class="top-bar">
-            <div class="info" id="selectionSummary8">Selected: 0 / 8 — Click any box to toggle</div>
+            <div class="info" id="selectionSummary8">Selected: 0 / 8 — Click any box (#1–#8) to add/remove</div>
             <div class="btn-group">
-                <button type="button" class="action-btn btn-clear" onclick="clearAllBoxes8()">Clear Boxes</button>
+                <button type="button" class="action-btn btn-fill" onclick="fillAllBoxes8()">Select All 8</button>
+                <button type="button" class="action-btn btn-clear" onclick="clearAllBoxes8()">Clear All</button>
                 <button type="button" class="action-btn btn-print" onclick="triggerSinglePagePrint8()">🖨️ Print Selected (1 Page)</button>
             </div>
         </div>
@@ -686,13 +692,18 @@ def render_interactive_8_sheet_and_print(sticker_item, enabled_box_indices):
                     }} else {{
                         const hintEl = document.createElement("span");
                         hintEl.className = "box-empty-hint";
-                        hintEl.innerText = "Off";
+                        hintEl.innerText = "+ Click to Add";
                         cell.appendChild(hintEl);
                     }}
 
                     sheet.appendChild(cell);
                 }}
                 updateSummary8();
+            }}
+
+            function fillAllBoxes8() {{
+                for (let i = 1; i <= 8; i++) selectedSet8.add(i);
+                renderSheet8();
             }}
 
             function clearAllBoxes8() {{
@@ -714,7 +725,7 @@ def render_interactive_8_sheet_and_print(sticker_item, enabled_box_indices):
                 }}
 
                 if (printableCount === 0) {{
-                    alert("Pehle kam se kam 1 active sticker box select karein.");
+                    alert("Pehle kam se kam 1 sticker box select karein.");
                     return;
                 }}
 
@@ -1038,15 +1049,17 @@ def build_a4_24_grid_html(slots_data, auto_print=False):
     </html>
     """
 
-def render_interactive_24_sheet_and_print(items_catalog, box_item_map, enabled_box_indices):
+def render_interactive_24_sheet_and_print(items_catalog, box_item_map, enabled_box_indices, default_brush_key=None):
     """
-    Renders an interactive 24-box (3x8) A4 sticker sheet where each box (#1 to #24) can have
-    its own product/barcode from items_catalog, clicking toggles active boxes, and printing
-    outputs a clean 1-page A4 sheet.
+    Renders an interactive 24-box (3x8) A4 sticker sheet where clicking ANY box (#1 to #24)
+    immediately places the active sticker into that box (or removes it if already active),
+    and includes an active sticker selector so half-used sheets can be filled in any exact box.
     """
     catalog_json = json.dumps(items_catalog)
     box_map_json = json.dumps(box_item_map)
     enabled_json = json.dumps(sorted(list(set(enabled_box_indices))))
+    fallback_key = default_brush_key or (next(iter(items_catalog.keys())) if items_catalog else "")
+    brush_json = json.dumps(fallback_key)
 
     component_html = f"""
     <!DOCTYPE html>
@@ -1079,6 +1092,30 @@ def render_interactive_24_sheet_and_print(items_catalog, box_item_map, enabled_b
             font-size: 13px;
             color: #0f172a;
             font-weight: 600;
+        }}
+        .brush-bar {{
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 10px;
+            padding: 8px 12px;
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
+            border-radius: 8px;
+            font-size: 12px;
+            color: #1e3a8a;
+            font-weight: 600;
+        }}
+        .brush-bar select {{
+            padding: 5px 8px;
+            border-radius: 6px;
+            border: 1px solid #93c5fd;
+            font-size: 12px;
+            font-weight: 600;
+            color: #0f172a;
+            background: #ffffff;
+            max-width: 340px;
         }}
         .top-bar .btn-group {{
             display: flex;
@@ -1114,7 +1151,7 @@ def render_interactive_24_sheet_and_print(items_catalog, box_item_map, enabled_b
             border-radius: 4px;
         }}
         .box-cell {{
-            border: 1px dashed #cbd5e1;
+            border: 1px dashed #94a3b8;
             display: flex;
             justify-content: center;
             align-items: center;
@@ -1138,7 +1175,7 @@ def render_interactive_24_sheet_and_print(items_catalog, box_item_map, enabled_b
             top: 2px;
             left: 4px;
             font-size: 9px;
-            color: #64748b;
+            color: #475569;
             font-weight: 700;
             background: rgba(255,255,255,0.9);
             padding: 0 3px;
@@ -1146,7 +1183,8 @@ def render_interactive_24_sheet_and_print(items_catalog, box_item_map, enabled_b
         }}
         .box-empty-hint {{
             font-size: 10px;
-            color: #94a3b8;
+            color: #64748b;
+            font-weight: 500;
         }}
         .sticker-img {{
             width: 98%;
@@ -1156,8 +1194,14 @@ def render_interactive_24_sheet_and_print(items_catalog, box_item_map, enabled_b
     </style>
     </head>
     <body>
+        <div class="brush-bar">
+            <span>🎯 Click karne par kaunsa sticker lage:</span>
+            <select id="activeBrushSelect" onchange="onBrushChange()"></select>
+            <span>(Kisi bhi box #1–#24 par seedha click karein)</span>
+        </div>
+
         <div class="top-bar">
-            <div class="info" id="selectionSummary">Selected: 0 / 24 — Click any box to toggle</div>
+            <div class="info" id="selectionSummary">Selected: 0 / 24 — Click any box (#1–#24) to add/remove</div>
             <div class="btn-group">
                 <button type="button" class="action-btn btn-clear" onclick="clearAllBoxes()">Clear Boxes</button>
                 <button type="button" class="action-btn btn-print" onclick="triggerSinglePagePrint()">🖨️ Print Selected (1 Page)</button>
@@ -1168,8 +1212,30 @@ def render_interactive_24_sheet_and_print(items_catalog, box_item_map, enabled_b
 
         <script>
             const catalog = {catalog_json};
-            const boxItemMap = {box_map_json};
+            const boxItemMap = Object.assign({{}}, {box_map_json});
             let selectedSet = new Set({enabled_json});
+            let activeBrushKey = {brush_json};
+
+            function initBrushDropdown() {{
+                const sel = document.getElementById("activeBrushSelect");
+                sel.innerHTML = "";
+                const keys = Object.keys(catalog);
+                keys.forEach(function(k) {{
+                    const opt = document.createElement("option");
+                    opt.value = k;
+                    opt.text = catalog[k].name.toUpperCase() + " (" + catalog[k].barcode + ")";
+                    if (k === activeBrushKey) opt.selected = true;
+                    sel.appendChild(opt);
+                }});
+                if (!activeBrushKey && keys.length > 0) {{
+                    activeBrushKey = keys[0];
+                }}
+            }}
+
+            function onBrushChange() {{
+                const sel = document.getElementById("activeBrushSelect");
+                activeBrushKey = sel.value;
+            }}
 
             function getItemForBox(boxNum) {{
                 const key = boxItemMap[String(boxNum)];
@@ -1197,7 +1263,10 @@ def render_interactive_24_sheet_and_print(items_catalog, box_item_map, enabled_b
                         if (selectedSet.has(i)) {{
                             selectedSet.delete(i);
                         }} else {{
-                            selectedSet.add(i);
+                            if (activeBrushKey && catalog[activeBrushKey]) {{
+                                boxItemMap[String(i)] = activeBrushKey;
+                                selectedSet.add(i);
+                            }}
                         }}
                         renderSheet();
                     }};
@@ -1215,7 +1284,7 @@ def render_interactive_24_sheet_and_print(items_catalog, box_item_map, enabled_b
                     }} else {{
                         const hintEl = document.createElement("span");
                         hintEl.className = "box-empty-hint";
-                        hintEl.innerText = item ? "Off" : "Empty";
+                        hintEl.innerText = "+ Add";
                         cell.appendChild(hintEl);
                     }}
 
@@ -1317,12 +1386,13 @@ def render_interactive_24_sheet_and_print(items_catalog, box_item_map, enabled_b
                 printWin.document.close();
             }}
 
+            initBrushDropdown();
             renderSheet();
         </script>
     </body>
     </html>
     """
-    html(component_html, height=1060)
+    html(component_html, height=1110)
 
 def render_clickable_barcode_list(items_list, key_prefix="bc_click"):
     """
@@ -2035,7 +2105,7 @@ else:
 
                     default_boxes = list(range(int(start_box), min(25, int(start_box) + int(qty))))
                     manual_boxes_str = st.text_input(
-                        "4️⃣ Ya Specific Box Numbers Likhein (Optional, comma se alag karein e.g. 1, 2, 5, 12)",
+                        "4️⃣ Ya Specific Box Numbers Likhein (Optional, comma se alag karein e.g. 7, 8, 9, 12)",
                         value=", ".join(str(x) for x in default_boxes),
                         key="a4_24_manual_boxes",
                     )
@@ -2077,14 +2147,15 @@ else:
                         ):
                             record_download_history(p_name, p_barcode, st.session_state.username)
 
-                    st.markdown("#### 📋 Interactive 24-Box Sheet (Kisi bhi box par click karke ON/OFF karein, phir 'Print Selected (1 Page)' dabayein)")
+                    st.markdown("#### 📋 Interactive 24-Box Sheet (Kisi bhi box `#1` se `#24` par seedha click karke sticker lagayein ya hatayein)")
                     render_interactive_24_sheet_and_print(
-                        items_catalog={active_key: active_item},
+                        items_catalog=all_catalog,
                         box_item_map=box_item_map,
                         enabled_box_indices=parsed_boxes,
+                        default_brush_key=active_key,
                     )
 
-                    st.info("💡 **Print Selected (1 Page)** dabane par alag clean print window khulegi jisme **1 sheet of paper** hi banega. Agar browser popup block kare toh **Download 1-Page A4 Print File (.html)** download karke khol lein.")
+                    st.info("💡 **Zero Waste Tip:** Agar `#1` se `#6` pehle print ho chuke hain, toh **Clear Boxes** dabayein aur seedha **`#7`, `#8`, `#9`...** par click karein — `#1` se `#6` blank rahenge aur wahi half page reuse ho jayega.")
 
                 else:
                     st.subheader("📋 Sab Saved Barcodes (All Products)")
@@ -2118,7 +2189,7 @@ else:
                                 mixed_enabled.append(idx_box)
 
                             custom_box_override = st.text_input(
-                                "Specific Box Override (Optional — format `box:barcode_id`, e.g. `1:0000000000001, 2:0000000000002`)",
+                                "Specific Box Override (Optional — format `box:barcode_id`, e.g. `7:0000000000001, 8:0000000000002`)",
                                 value="",
                                 key="mix_box_override",
                             )
@@ -2152,6 +2223,7 @@ else:
                                 items_catalog=all_catalog,
                                 box_item_map=mixed_map,
                                 enabled_box_indices=mixed_enabled,
+                                default_brush_key=filtered_keys[0] if filtered_keys else None,
                             )
 
                         st.markdown("---")
@@ -2555,7 +2627,7 @@ else:
                         key=f"dl_vf_html_{sel_v_id}",
                     )
 
-                st.caption("Kisi bhi box (#1 to #8) par click karke ON/OFF karein, phir **Print Selected (1 Page)** dabayein.")
+                st.caption("Kisi bhi box (#1 to #8) par seedha click karke sticker lagayein ya hatayein, phir **Print Selected (1 Page)** dabayein.")
                 render_interactive_8_sheet_and_print(
                     sticker_item=sel_v_item,
                     enabled_box_indices=[1],
