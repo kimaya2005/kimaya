@@ -1,4 +1,5 @@
 import sqlite3
+import json
 import streamlit as st
 import pandas as pd
 from barcode import Code128
@@ -219,7 +220,6 @@ def generate_custom_barcode_image(item_name, barcode_text):
     barcode_img = Image.open(rv)
     bw, bh = barcode_img.size
 
-    # Target aspect ratio 63.5mm x 33.9mm
     target_w = 635 * scale
     target_h = 339 * scale
     sticker_img = Image.new("RGB", (target_w, target_h), "white")
@@ -305,8 +305,8 @@ def build_print_html(img_io):
     </html>
     """
 
-def build_a4_24_grid_html(slots_data, auto_print=True):
-    """slots_data: list of 24 items (3 cols x 8 rows, 63.5mm x 33.9mm)."""
+def build_a4_24_grid_html(slots_data, auto_print=False):
+    """slots_data: list of 24 items (3 cols x 8 rows, 63.5mm x 33.9mm) strictly fitting 1 single A4 page."""
     cells_html = []
     for idx in range(24):
         slot = slots_data[idx]
@@ -349,30 +349,37 @@ def build_a4_24_grid_html(slots_data, auto_print=True):
             }}
             * {{
                 box-sizing: border-box;
+                page-break-inside: avoid;
+                break-inside: avoid;
             }}
-            body {{
+            html, body {{
                 margin: 0;
                 padding: 0;
+                width: 210mm;
+                height: 294mm;
+                overflow: hidden;
                 background: #ffffff;
                 font-family: Arial, sans-serif;
             }}
             .a4-sheet {{
                 width: 190.5mm;
-                height: 271.2mm;
-                margin: 12.9mm 9.75mm;
+                height: 270mm;
+                margin: 12mm 9.75mm 0 9.75mm;
                 background: white;
                 display: grid;
                 grid-template-columns: repeat(3, 63.5mm);
-                grid-template-rows: repeat(8, 33.9mm);
+                grid-template-rows: repeat(8, 33.75mm);
+                page-break-after: avoid;
+                break-after: avoid;
             }}
             .label-cell {{
                 width: 63.5mm;
-                height: 33.9mm;
+                height: 33.75mm;
                 display: flex;
                 flex-direction: column;
                 justify-content: center;
                 align-items: center;
-                padding: 1.5mm 2mm;
+                padding: 1mm 2mm;
                 overflow: hidden;
             }}
             .prod-name {{
@@ -383,23 +390,15 @@ def build_a4_24_grid_html(slots_data, auto_print=True):
                 overflow: hidden;
                 text-overflow: ellipsis;
                 max-width: 59mm;
-                margin-bottom: 0.8mm;
+                margin-bottom: 0.6mm;
                 color: #000;
             }}
             .label-cell img {{
                 max-width: 59.5mm;
-                max-height: 25mm;
+                max-height: 24.5mm;
                 width: auto;
                 height: auto;
                 object-fit: contain;
-            }}
-            @media print {{
-                body {{
-                    background: white;
-                }}
-                .a4-sheet {{
-                    margin: 12.9mm 9.75mm;
-                }}
             }}
         </style>
     </head>
@@ -412,94 +411,279 @@ def build_a4_24_grid_html(slots_data, auto_print=True):
     </html>
     """
 
-def render_top_level_a4_24_overlay(slots_data):
-    """Renders 24-sticker grid (3x8, 63.5mm x 33.9mm) so @media print prints ONLY the sticker grid."""
-    cells = []
-    for idx in range(24):
-        slot = slots_data[idx]
-        if slot:
-            cells.append(
-                f'<div class="raut-a4-24-cell"><div class="raut-a4-24-name">{slot["name"].upper()}</div><img src="data:image/png;base64,{slot["b64"]}" /></div>'
-            )
-        else:
-            cells.append('<div class="raut-a4-24-cell"></div>')
+def render_interactive_24_sheet_and_print(items_catalog, selected_box_indices, active_item_key, print_now=False):
+    """
+    Renders an interactive 24-box (3x8) A4 sticker sheet right on screen where the user can click
+    any box (#1 to #24) to toggle printing for that box, and prints strictly 1 A4 page on demand.
+    """
+    catalog_json = json.dumps(items_catalog)
+    selected_json = json.dumps(sorted(list(set(selected_box_indices))))
+    active_key_json = json.dumps(active_item_key)
+    auto_print_js = "true" if print_now else "false"
 
-    grid_items_html = "".join(cells)
-    st.markdown(
-        f"""
-        <style>
-            .raut-a4-24-preview {{
-                width: 100%;
-                max-width: 720px;
-                aspect-ratio: 210 / 297;
-                border: 1px solid #ccc;
-                background: #ffffff;
-                display: grid;
-                grid-template-columns: repeat(3, 1fr);
-                grid-template-rows: repeat(8, 1fr);
-                padding: 4.3% 4.6%;
-                margin: 10px 0 18px 0;
+    component_html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+    <meta charset="utf-8" />
+    <style>
+        * {{
+            box-sizing: border-box;
+        }}
+        body {{
+            margin: 0;
+            padding: 6px 0 12px 0;
+            font-family: Arial, sans-serif;
+            background: transparent;
+        }}
+        .top-bar {{
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 10px;
+            padding: 8px 12px;
+            background: #f4f6f9;
+            border-radius: 6px;
+            border: 1px solid #dde2e8;
+        }}
+        .top-bar .info {{
+            font-size: 13px;
+            color: #1f2937;
+            font-weight: 600;
+        }}
+        .top-bar .btn-group {{
+            display: flex;
+            gap: 8px;
+        }}
+        button.action-btn {{
+            border: none;
+            border-radius: 5px;
+            padding: 7px 12px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+        }}
+        .btn-clear {{
+            background: #e5e7eb;
+            color: #111827;
+        }}
+        .btn-print {{
+            background: #dc2626;
+            color: #ffffff;
+        }}
+        .sheet-wrapper {{
+            width: 100%;
+            max-width: 720px;
+            aspect-ratio: 210 / 297;
+            border: 1px solid #cbd5e1;
+            background: #ffffff;
+            padding: 4.1% 4.6%;
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            grid-template-rows: repeat(8, 1fr);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        }}
+        .box-cell {{
+            border: 1px dashed #cbd5e1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 2px;
+            cursor: pointer;
+            position: relative;
+            user-select: none;
+            transition: background 0.12s ease;
+            overflow: hidden;
+        }}
+        .box-cell:hover {{
+            background: #f0f9ff;
+            border-color: #0284c7;
+        }}
+        .box-cell.selected {{
+            border: 1.5px solid #16a34a;
+            background: #ffffff;
+        }}
+        .box-num {{
+            position: absolute;
+            top: 2px;
+            left: 4px;
+            font-size: 9px;
+            color: #64748b;
+            font-weight: 700;
+        }}
+        .box-empty-hint {{
+            font-size: 10px;
+            color: #94a3b8;
+        }}
+        .sticker-title {{
+            font-size: 8.5px;
+            font-weight: 700;
+            color: #000000;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 95%;
+            line-height: 1.1;
+            margin-top: 4px;
+        }}
+        .sticker-img {{
+            max-width: 95%;
+            max-height: 70%;
+            object-fit: contain;
+        }}
+
+        @media print {{
+            @page {{
+                size: A4 portrait;
+                margin: 0;
             }}
-            .raut-a4-24-cell {{
-                border: 0.5px dashed #dcdcdc;
-                display: flex;
-                flex-direction: column;
-                justify-content: center;
-                align-items: center;
-                padding: 2px;
-                overflow: hidden;
+            html, body {{
+                width: 210mm;
+                height: 292mm;
+                margin: 0 !important;
+                padding: 0 !important;
+                overflow: hidden !important;
+                background: #ffffff !important;
             }}
-            .raut-a4-24-name {{
-                font-size: 9px;
-                font-weight: bold;
-                color: #000;
-                white-space: nowrap;
-                overflow: hidden;
-                text-overflow: ellipsis;
-                max-width: 95%;
-                line-height: 1.15;
+            .top-bar {{
+                display: none !important;
             }}
-            .raut-a4-24-cell img {{
-                max-width: 95%;
-                max-height: 75%;
-                object-fit: contain;
+            .sheet-wrapper {{
+                width: 190.5mm !important;
+                height: 268mm !important;
+                max-width: 190.5mm !important;
+                aspect-ratio: auto !important;
+                margin: 11.5mm 9.75mm 0 9.75mm !important;
+                padding: 0 !important;
+                border: none !important;
+                box-shadow: none !important;
+                grid-template-columns: repeat(3, 63.5mm) !important;
+                grid-template-rows: repeat(8, 33.5mm) !important;
+                page-break-after: avoid !important;
+                break-after: avoid !important;
             }}
-            @media print {{
-                @page {{
-                    size: A4 portrait;
-                    margin: 0;
-                }}
-                body * {{
-                    visibility: hidden !important;
-                }}
-                .raut-a4-24-preview, .raut-a4-24-preview * {{
-                    visibility: visible !important;
-                }}
-                .raut-a4-24-preview {{
-                    position: fixed !important;
-                    left: 9.75mm !important;
-                    top: 12.9mm !important;
-                    width: 190.5mm !important;
-                    height: 271.2mm !important;
-                    max-width: 190.5mm !important;
-                    aspect-ratio: auto !important;
-                    border: none !important;
-                    margin: 0 !important;
-                    padding: 0 !important;
-                    grid-template-columns: repeat(3, 63.5mm) !important;
-                    grid-template-rows: repeat(8, 33.9mm) !important;
-                }}
-                .raut-a4-24-cell {{
-                    border: none !important;
-                    width: 63.5mm !important;
-                    height: 33.9mm !important;
-                }}
+            .box-cell {{
+                border: none !important;
+                background: #ffffff !important;
+                width: 63.5mm !important;
+                height: 33.5mm !important;
+                cursor: default !important;
             }}
-        </style>
-        <div class="raut-a4-24-preview">{grid_items_html}</div>
-        """,
-        unsafe_allow_html=True,
-    )
+            .box-num, .box-empty-hint {{
+                display: none !important;
+            }}
+            .sticker-title {{
+                font-size: 7.5pt !important;
+                margin-top: 0 !important;
+                margin-bottom: 0.5mm !important;
+            }}
+            .sticker-img {{
+                max-width: 59.5mm !important;
+                max-height: 24mm !important;
+            }}
+        }}
+    </style>
+    </head>
+    <body>
+        <div class="top-bar">
+            <div class="info" id="selectionSummary">Selected Boxes: 0 / 24 (Click any box on sheet to toggle)</div>
+            <div class="btn-group">
+                <button type="button" class="action-btn btn-clear" onclick="clearAllBoxes()">Clear Boxes</button>
+                <button type="button" class="action-btn btn-print" onclick="triggerSinglePagePrint()">Print Selected (1 Page)</button>
+            </div>
+        </div>
+
+        <div class="sheet-wrapper" id="stickerSheet"></div>
+
+        <script>
+            const catalog = {catalog_json};
+            const activeKey = {active_key_json};
+            let selectedSet = new Set({selected_json});
+
+            function getActiveItem() {{
+                return catalog[activeKey] || null;
+            }}
+
+            function updateSummary() {{
+                const arr = Array.from(selectedSet).sort((a, b) => a - b);
+                const labelText = arr.length > 0 ? "Boxes #" + arr.join(", #") : "None";
+                document.getElementById("selectionSummary").innerText =
+                    "Selected: " + arr.length + " / 24 (" + labelText + ") — Click any box to toggle";
+            }}
+
+            function renderSheet() {{
+                const sheet = document.getElementById("stickerSheet");
+                sheet.innerHTML = "";
+                const item = getActiveItem();
+
+                for (let i = 1; i <= 24; i++) {{
+                    const cell = document.createElement("div");
+                    cell.className = "box-cell" + (selectedSet.has(i) ? " selected" : "");
+                    cell.onclick = function() {{
+                        if (selectedSet.has(i)) {{
+                            selectedSet.delete(i);
+                        }} else {{
+                            selectedSet.add(i);
+                        }}
+                        renderSheet();
+                    }};
+
+                    const numTag = document.createElement("span");
+                    numTag.className = "box-num";
+                    numTag.innerText = "#" + i;
+                    cell.appendChild(numTag);
+
+                    if (selectedSet.has(i) && item) {{
+                        const titleEl = document.createElement("div");
+                        titleEl.className = "sticker-title";
+                        titleEl.innerText = item.name.toUpperCase();
+                        cell.appendChild(titleEl);
+
+                        const imgEl = document.createElement("img");
+                        imgEl.className = "sticker-img";
+                        imgEl.src = "data:image/png;base64," + item.b64;
+                        cell.appendChild(imgEl);
+                    }} else {{
+                        const hintEl = document.createElement("span");
+                        hintEl.className = "box-empty-hint";
+                        hintEl.innerText = "Empty";
+                        cell.appendChild(hintEl);
+                    }}
+
+                    sheet.appendChild(cell);
+                }}
+                updateSummary();
+            }}
+
+            function clearAllBoxes() {{
+                selectedSet.clear();
+                renderSheet();
+            }}
+
+            function triggerSinglePagePrint() {{
+                const arr = Array.from(selectedSet).sort((a, b) => a - b);
+                if (arr.length === 0) {{
+                    alert("Pehle kam se kam 1 sticker box select karein.");
+                    return;
+                }}
+                window.print();
+            }}
+
+            renderSheet();
+
+            if ({auto_print_js}) {{
+                setTimeout(function() {{
+                    triggerSinglePagePrint();
+                }}, 250);
+            }}
+        </script>
+    </body>
+    </html>
+    """
+    html(component_html, height=1060)
 
 def get_next_barcode_id():
     conn = get_db_connection()
@@ -527,9 +711,6 @@ if "active_custom_page_id" not in st.session_state:
 
 if "generated_preview_item" not in st.session_state:
     st.session_state.generated_preview_item = None
-
-if "trigger_a4_24_print" not in st.session_state:
-    st.session_state.trigger_a4_24_print = False
 
 if st.session_state.logged_in:
     conn = get_db_connection()
@@ -982,7 +1163,7 @@ else:
     # --- SECTION 1.5: 24-STICKER A4 GRID PRINT (63.5mm x 33.9mm, 3x8) ---
     elif menu == "🖨️ Print 24-Sticker A4 (63.5x33.9mm)":
         st.title("🖨️ Print 24-Sticker A4 Sheet (63.5mm × 33.9mm)")
-        st.write("Canon PIXMA G3010 ke liye 24-sticker A4 sheet (3 columns × 8 rows) layout. Pehle se use hue stickers skip karne ke liye Start Box chunein.")
+        st.write("Pehle sticker aur boxes chunein — print tab tak shuru nahi hoga jab tak aap print button na dabayein.")
         st.markdown("---")
 
         conn = get_db_connection()
@@ -992,127 +1173,83 @@ else:
         if p_df.empty:
             st.info("Print karne ke liye koi products nahi hain.")
         else:
-            mode = st.radio(
-                "Print Mode",
-                ["🎯 Ek Product ke Multiple Stickers", "📋 Sab Products Ek Ke Niche Ek"],
-                horizontal=True,
-                key="a4_24_mode",
+            item_dict_p = {
+                f"{row['item_name'].upper()} (ID: {row['barcode_id']})": (str(row["barcode_id"]), row["item_name"], row["barcode_id"])
+                for _, row in p_df.iterrows()
+            }
+            selected_p_str = st.selectbox("1️⃣ Kaunsa Sticker / Product Print Karna Hai?", list(item_dict_p.keys()), key="a4_24_sel_prod")
+            active_key, p_name, p_barcode = item_dict_p[selected_p_str]
+
+            c_start, c_qty = st.columns(2)
+            with c_start:
+                start_box = st.number_input("2️⃣ Start Box # (1 to 24)", min_value=1, max_value=24, value=1, step=1)
+            max_avail = 25 - int(start_box)
+            with c_qty:
+                qty = st.number_input("3️⃣ Kitne Stickers Chahiye?", min_value=1, max_value=max_avail, value=min(6, max_avail), step=1)
+
+            default_boxes = list(range(int(start_box), min(25, int(start_box) + int(qty))))
+            manual_boxes_str = st.text_input(
+                "4️⃣ Ya Specific Box Numbers Likhein (Optional, comma se alag karein e.g. 1, 2, 5, 12)",
+                value=", ".join(str(x) for x in default_boxes),
+                key="a4_24_manual_boxes",
             )
-            st.markdown("---")
 
-            if mode == "🎯 Ek Product ke Multiple Stickers":
-                item_dict_p = {
-                    f"{row['item_name'].upper()} (ID: {row['barcode_id']})": (row["item_name"], row["barcode_id"])
-                    for _, row in p_df.iterrows()
+            parsed_boxes = []
+            for part in manual_boxes_str.split(","):
+                p_clean = part.strip()
+                if p_clean.isdigit():
+                    b_num = int(p_clean)
+                    if 1 <= b_num <= 24 and b_num not in parsed_boxes:
+                        parsed_boxes.append(b_num)
+
+            single_io = generate_custom_barcode_image(p_name, p_barcode)
+            single_b64 = base64.b64encode(single_io.getvalue()).decode("utf-8")
+
+            catalog_payload = {
+                active_key: {
+                    "name": p_name,
+                    "barcode": p_barcode,
+                    "b64": single_b64,
                 }
-                selected_p_str = st.selectbox("Select Product", list(item_dict_p.keys()), key="a4_24_sel_prod")
-                p_name, p_barcode = item_dict_p[selected_p_str]
+            }
 
-                c_start, c_qty = st.columns(2)
-                with c_start:
-                    start_box = st.number_input("Start from Box # (1 to 24)", min_value=1, max_value=24, value=1, step=1)
-                max_avail = 25 - int(start_box)
-                with c_qty:
-                    qty = st.number_input("Kitne Stickers Print Karne Hain?", min_value=1, max_value=max_avail, value=min(6, max_avail), step=1)
+            slots_24 = [None] * 24
+            for b_num in parsed_boxes:
+                slots_24[b_num - 1] = {
+                    "name": p_name,
+                    "barcode": p_barcode,
+                    "b64": single_b64,
+                }
 
-                single_io = generate_custom_barcode_image(p_name, p_barcode)
-                single_b64 = base64.b64encode(single_io.getvalue()).decode("utf-8")
+            col_dl1, col_dl2 = st.columns(2)
+            with col_dl1:
+                if st.download_button(
+                    label="💾 Download Single Sticker PNG",
+                    data=single_io,
+                    file_name=f"{p_name}_{p_barcode}_63.5x33.9mm.png",
+                    mime="image/png",
+                ):
+                    record_download_history(p_name, p_barcode, st.session_state.username)
 
-                slots = [None] * 24
-                s_idx = int(start_box) - 1
-                for i in range(int(qty)):
-                    if s_idx + i < 24:
-                        slots[s_idx + i] = {"name": p_name, "barcode": p_barcode, "b64": single_b64}
+            with col_dl2:
+                printable_a4_html = build_a4_24_grid_html(slots_24, auto_print=False)
+                if st.download_button(
+                    label="📄 Download 1-Page A4 Print File (.html)",
+                    data=printable_a4_html.encode("utf-8"),
+                    file_name=f"A4_24_Stickers_{p_name}_{p_barcode}.html",
+                    mime="text/html",
+                ):
+                    record_download_history(p_name, p_barcode, st.session_state.username)
 
-                st.markdown("#### 🏷️ Single Sticker Preview (63.5mm × 33.9mm)")
-                st.image(single_io, width=280)
+            st.markdown("#### 📋 Interactive 24-Box Sheet (Kisi bhi box par click karke ON/OFF karein, phir 'Print Selected (1 Page)' dabayein)")
+            render_interactive_24_sheet_and_print(
+                items_catalog=catalog_payload,
+                selected_box_indices=parsed_boxes,
+                active_item_key=active_key,
+                print_now=False,
+            )
 
-                col_a1, col_a2, col_a3 = st.columns(3)
-                with col_a1:
-                    if st.download_button(
-                        label="💾 Download Single PNG",
-                        data=single_io,
-                        file_name=f"{p_name}_{p_barcode}_63.5x33.9mm.png",
-                        mime="image/png",
-                    ):
-                        record_download_history(p_name, p_barcode, st.session_state.username)
-
-                with col_a2:
-                    printable_a4_html = build_a4_24_grid_html(slots, auto_print=True)
-                    if st.download_button(
-                        label="📄 Download A4 Print File (.html)",
-                        data=printable_a4_html.encode("utf-8"),
-                        file_name=f"A4_24_Stickers_{p_name}_{p_barcode}.html",
-                        mime="text/html",
-                    ):
-                        record_download_history(p_name, p_barcode, st.session_state.username)
-
-                with col_a3:
-                    if st.button("🖨️ Print A4 Sheet (24-Grid)", type="primary"):
-                        record_download_history(p_name, p_barcode, st.session_state.username)
-                        st.session_state.trigger_a4_24_print = True
-
-                render_top_level_a4_24_overlay(slots)
-
-                if st.session_state.trigger_a4_24_print:
-                    st.session_state.trigger_a4_24_print = False
-                    html(
-                        """
-                        <script>
-                            setTimeout(function() {
-                                window.parent.print();
-                            }, 250);
-                        </script>
-                        """,
-                        height=0,
-                    )
-
-                st.info("💡 **Tip:** Print dialog mein Destination **Canon G3010 series**, Paper Size **A4**, Scale **100%**, aur Margins **None** rakhein.")
-
-            else:
-                search_print = st.text_input("🔍 Search Barcode / Product...", "", key="search_all_24").strip().lower()
-                filtered_p_df = p_df
-                if search_print:
-                    filtered_p_df = p_df[
-                        p_df["item_name"].str.lower().str.contains(search_print, na=False)
-                        | p_df["barcode_id"].astype(str).str.lower().str.contains(search_print, na=False)
-                    ]
-
-                if filtered_p_df.empty:
-                    st.info("Koi matching barcode nahi mila.")
-                else:
-                    for _, row in filtered_p_df.iterrows():
-                        r_id = row["id"]
-                        r_name = row["item_name"]
-                        r_barcode = row["barcode_id"]
-                        r_price = row["price"]
-                        r_slot = row["slot_category"]
-
-                        with st.container():
-                            st.markdown(f"#### 🏷️ {r_name.upper()} (`{r_barcode}`)")
-                            try:
-                                item_img_io = generate_custom_barcode_image(r_name, r_barcode)
-                                st.image(item_img_io, width=280)
-
-                                c_dl, c_pr = st.columns(2)
-                                with c_dl:
-                                    if st.download_button(
-                                        label="💾 Download PNG",
-                                        data=item_img_io,
-                                        file_name=f"Sticker_{r_name}_{r_barcode}.png",
-                                        mime="image/png",
-                                        key=f"all_24_dl_{r_id}",
-                                    ):
-                                        record_download_history(r_name, r_barcode, st.session_state.username)
-                                with c_pr:
-                                    if st.button("🖨️ Direct Print", type="primary", key=f"all_24_pr_{r_id}"):
-                                        record_download_history(r_name, r_barcode, st.session_state.username)
-                                        html(build_print_html(item_img_io), height=120)
-                            except Exception as e:
-                                st.error(f"Error: {e}")
-
-                            st.caption(f"Price: {r_price or 'N/A'} | Slot/Cat: {r_slot or 'N/A'}")
-                            st.markdown("---")
+            st.info("💡 Print dialog khulne par **Pages: All** (ab sirf 1 hi page banega), **Paper Size: A4**, **Scale: 100%**, aur **Margins: None** rakhein.")
 
     # --- SECTION 2: APP DOWNLOADED HISTORY ---
     elif menu == "📂 App Downloaded History":
