@@ -200,6 +200,34 @@ def record_download_history(item_name, barcode_id, username):
     except Exception:
         pass
 
+def _load_font(size_px, bold=True):
+    font_paths = (
+        [
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+            "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf",
+            "DejaVuSans-Bold.ttf",
+            "arialbd.ttf",
+        ]
+        if bold
+        else [
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+            "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+            "DejaVuSans.ttf",
+            "arial.ttf",
+        ]
+    )
+    for path in font_paths:
+        try:
+            return ImageFont.truetype(path, size_px)
+        except IOError:
+            continue
+    try:
+        return ImageFont.load_default(size=size_px)
+    except TypeError:
+        return ImageFont.load_default()
+
 # Helper function: Clean professional sticker sized for 63.5mm x 33.9mm (24 stickers per A4 sheet, 3x8)
 def generate_custom_barcode_image(item_name, barcode_text):
     scale = 4
@@ -225,27 +253,7 @@ def generate_custom_barcode_image(item_name, barcode_text):
     sticker_img = Image.new("RGB", (target_w, target_h), "white")
     draw = ImageDraw.Draw(sticker_img)
 
-    font_title = None
-    font_paths = [
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
-        "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf",
-        "DejaVuSans-Bold.ttf",
-        "arialbd.ttf",
-    ]
-
-    for path in font_paths:
-        try:
-            font_title = ImageFont.truetype(path, 28 * scale)
-            break
-        except IOError:
-            continue
-
-    if not font_title:
-        try:
-            font_title = ImageFont.load_default(size=28 * scale)
-        except TypeError:
-            font_title = ImageFont.load_default()
+    font_title = _load_font(28 * scale, bold=True)
 
     text_to_draw = f"{item_name.upper()}"
     bbox = draw.textbbox((0, 0), text_to_draw, font=font_title)
@@ -281,6 +289,118 @@ def generate_custom_barcode_image(item_name, barcode_text):
     sticker_img.save(final_io, format="PNG")
     final_io.seek(0)
     return final_io
+
+def generate_vendor_custom_sticker(
+    barcode_no,
+    sku_code="",
+    batch_code="",
+    net_qty="",
+    mrp_text="",
+    serial_code="",
+):
+    """
+    Generates a clean sticker with manually entered barcode number and optional fields
+    (SKU/Model, Batch Code, Net Qty, MRP Incl. of all taxes, Serial/Extra Code).
+    """
+    scale = 4
+    target_w = 635 * scale
+    target_h = 339 * scale
+    img = Image.new("RGB", (target_w, target_h), "white")
+    draw = ImageDraw.Draw(img)
+
+    font_sku = _load_font(22 * scale, bold=True)
+    font_meta = _load_font(16 * scale, bold=True)
+    font_mrp = _load_font(18 * scale, bold=True)
+    font_serial = _load_font(16 * scale, bold=True)
+
+    y_cursor = 10 * scale
+    right_lines = []
+    if batch_code.strip():
+        right_lines.append(batch_code.strip())
+    if net_qty.strip():
+        right_lines.append(net_qty.strip())
+
+    right_w = 0
+    for rl in right_lines:
+        bb = draw.textbbox((0, 0), rl, font=font_meta)
+        right_w = max(right_w, bb[2] - bb[0])
+
+    if sku_code.strip():
+        max_sku_w = target_w - right_w - 36 * scale
+        sku_txt = sku_code.strip().upper()
+        bb = draw.textbbox((0, 0), sku_txt, font=font_sku)
+        while bb[2] - bb[0] > max_sku_w and len(sku_txt) > 4:
+            sku_txt = sku_txt[:-1]
+            bb = draw.textbbox((0, 0), sku_txt, font=font_sku)
+        draw.text((16 * scale, y_cursor), sku_txt, fill="#111111", font=font_sku)
+
+    ry = 10 * scale
+    for rl in right_lines:
+        bb = draw.textbbox((0, 0), rl, font=font_meta)
+        rw = bb[2] - bb[0]
+        draw.text((target_w - 16 * scale - rw, ry), rl, fill="#111111", font=font_meta)
+        ry += (bb[3] - bb[1]) + 3 * scale
+
+    y_cursor = max(y_cursor + 28 * scale, ry + 4 * scale)
+
+    if mrp_text.strip():
+        mrp_clean = mrp_text.strip()
+        if "mrp" not in mrp_clean.lower():
+            mrp_clean = f"MRP Rs. {mrp_clean} (Incl.of all taxes)"
+        bb = draw.textbbox((0, 0), mrp_clean, font=font_mrp)
+        mw = bb[2] - bb[0]
+        if mw > target_w - 32 * scale:
+            mrp_clean = mrp_clean[:42] + "..."
+            bb = draw.textbbox((0, 0), mrp_clean, font=font_mrp)
+            mw = bb[2] - bb[0]
+        draw.text((16 * scale, y_cursor), mrp_clean, fill="#111111", font=font_mrp)
+        y_cursor += (bb[3] - bb[1]) + 6 * scale
+
+    bottom_reserve = 0
+    serial_clean = serial_code.strip()
+    if serial_clean:
+        s_bb = draw.textbbox((0, 0), serial_clean, font=font_serial)
+        bottom_reserve = (s_bb[3] - s_bb[1]) + 10 * scale
+
+    bc_avail_h = max(45 * scale, target_h - y_cursor - bottom_reserve - 6 * scale)
+    writer_options = {
+        "module_width": 0.34 * scale,
+        "module_height": max(8.0 * scale, (bc_avail_h / (scale * 2.2))),
+        "quiet_zone": 4 * scale,
+        "write_text": True,
+        "font_size": 11 * scale,
+        "text_distance": 3.0 * scale,
+    }
+    rv = BytesIO()
+    Code128(str(barcode_no), writer=ImageWriter()).write(rv, options=writer_options)
+    rv.seek(0)
+    bc_img = Image.open(rv)
+    bw, bh = bc_img.size
+
+    bc_avail_w = target_w - 28 * scale
+    ratio = min(bc_avail_w / max(1, bw), bc_avail_h / max(1, bh))
+    new_bw = max(1, int(bw * ratio))
+    new_bh = max(1, int(bh * ratio))
+    resized_bc = bc_img.resize((new_bw, new_bh), Image.Resampling.LANCZOS)
+
+    bc_x = (target_w - new_bw) // 2
+    bc_y = y_cursor + max(0, (bc_avail_h - new_bh) // 2)
+    img.paste(resized_bc, (bc_x, bc_y))
+
+    if serial_clean:
+        s_bb = draw.textbbox((0, 0), serial_clean, font=font_serial)
+        sw = s_bb[2] - s_bb[0]
+        if sw > target_w - 32 * scale:
+            serial_clean = serial_clean[:34] + "..."
+            s_bb = draw.textbbox((0, 0), serial_clean, font=font_serial)
+            sw = s_bb[2] - s_bb[0]
+        draw.text((16 * scale, target_h - bottom_reserve + 2 * scale), serial_clean, fill="#111111", font=font_serial)
+
+    final_img = img.resize((target_w // scale, target_h // scale), Image.Resampling.LANCZOS)
+    out_io = BytesIO()
+    final_img.save(out_io, format="PNG")
+    out_io.seek(0)
+    return out_io
 
 def build_print_html(img_io):
     img_bytes = img_io.getvalue()
@@ -881,6 +1001,9 @@ if "active_custom_page_id" not in st.session_state:
 if "generated_preview_item" not in st.session_state:
     st.session_state.generated_preview_item = None
 
+if "vendor_sticker_preview" not in st.session_state:
+    st.session_state.vendor_sticker_preview = None
+
 if st.session_state.logged_in:
     conn = get_db_connection()
     c = conn.cursor()
@@ -953,6 +1076,7 @@ else:
                 "📊 Excel Sheet & Notes",
                 "📦 App Barcode Storage", 
                 "🖨️ Print 24-Sticker A4 (63.5x33.9mm)",
+                "🏷️ Custom / Vendor Barcode",
                 "📂 App Downloaded History", 
                 "♻️ Trash / Bin Folder", 
                 "📜 Activity Audit Logs",
@@ -969,6 +1093,7 @@ else:
                 "📊 Excel Sheet & Notes",
                 "📦 App Barcode Storage", 
                 "🖨️ Print 24-Sticker A4 (63.5x33.9mm)",
+                "🏷️ Custom / Vendor Barcode",
                 "📂 App Downloaded History", 
                 "♻️ Trash / Bin Folder", 
                 "➕ Generate & Save Barcode", 
@@ -1510,6 +1635,78 @@ else:
                             "b64": base64.b64encode(r_img_io.getvalue()).decode("utf-8"),
                         })
                     render_clickable_barcode_list(clickable_all, key_prefix="all_stickers_click")
+
+    # --- SECTION 1.8: CUSTOM / VENDOR MANUAL BARCODE PANEL ---
+    elif menu == "🏷️ Custom / Vendor Barcode":
+        st.title("🏷️ Custom / Vendor Barcode Panel")
+        st.write("Dusri company ke product ke liye barcode number manually enter karein. Baaki sab details optional hain.")
+        st.markdown("---")
+
+        with st.form("vendor_custom_barcode_form"):
+            v_barcode = st.text_input(
+                "Barcode Number (Manual Entry)",
+                placeholder="e.g. 8905253127653",
+            )
+            c1, c2 = st.columns(2)
+            with c1:
+                v_sku = st.text_input("Model / SKU Code (Optional)", placeholder="e.g. NN8976SL10W")
+                v_batch = st.text_input("Batch / Lot Code (Optional)", placeholder="e.g. 8DJ720")
+            with c2:
+                v_net = st.text_input("Net Qty (Optional)", placeholder="e.g. Net : 01 N")
+                v_mrp = st.text_input("MRP / Price Info (Optional)", placeholder="e.g. MRP Rs. 775.00 (Incl.of all taxes)")
+            v_serial = st.text_input("Serial / Extra Code (Optional)", placeholder="e.g. w 1801AJWH302983JX.T")
+
+            gen_vendor_btn = st.form_submit_button("Generate Custom Sticker")
+
+            if gen_vendor_btn:
+                clean_bc = v_barcode.strip()
+                if not clean_bc:
+                    clean_bc = get_next_barcode_id()
+
+                try:
+                    sticker_io = generate_vendor_custom_sticker(
+                        barcode_no=clean_bc,
+                        sku_code=v_sku,
+                        batch_code=v_batch,
+                        net_qty=v_net,
+                        mrp_text=v_mrp,
+                        serial_code=v_serial,
+                    )
+                    label_title = v_sku.strip() or clean_bc
+                    st.session_state.vendor_sticker_preview = {
+                        "title": label_title,
+                        "barcode": clean_bc,
+                        "b64": base64.b64encode(sticker_io.getvalue()).decode("utf-8"),
+                    }
+                    log_activity(
+                        st.session_state.username,
+                        "CUSTOM_VENDOR_BARCODE",
+                        f"Generated custom vendor sticker for barcode {clean_bc} ({label_title}).",
+                    )
+                except Exception as e:
+                    st.error(f"Barcode generate karne mein error aaya: {e}")
+
+        if st.session_state.vendor_sticker_preview:
+            vp = st.session_state.vendor_sticker_preview
+            st.markdown("---")
+            st.subheader("🖨️ Generated Sticker (Click karke print karein)")
+            render_clickable_barcode_list(
+                [
+                    {
+                        "name": vp["title"],
+                        "barcode": vp["barcode"],
+                        "b64": vp["b64"],
+                    }
+                ],
+                key_prefix="vendor_custom_preview",
+            )
+            st.download_button(
+                label="💾 Download Custom Sticker PNG",
+                data=base64.b64decode(vp["b64"]),
+                file_name=f"custom_{vp['barcode']}.png",
+                mime="image/png",
+                key="dl_vendor_sticker_png",
+            )
 
     # --- SECTION 2: APP DOWNLOADED HISTORY ---
     elif menu == "📂 App Downloaded History":
