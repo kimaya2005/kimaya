@@ -306,7 +306,7 @@ def build_print_html(img_io):
     """
 
 def build_a4_24_grid_html(slots_data, auto_print=False):
-    """slots_data: list of 24 items (3 cols x 8 rows, 63.5mm x 33.9mm) strictly fitting 1 single A4 page."""
+    """slots_data: list of 24 dicts {'name','barcode','b64'} or None (3 cols x 8 rows, 63.5mm x 33.9mm)."""
     cells_html = []
     for idx in range(24):
         slot = slots_data[idx]
@@ -395,14 +395,14 @@ def build_a4_24_grid_html(slots_data, auto_print=False):
     </html>
     """
 
-def render_interactive_24_sheet_and_print(items_catalog, selected_box_indices, active_item_key):
+def render_interactive_24_sheet_and_print(items_catalog, box_item_map, enabled_box_indices):
     """
-    Renders an interactive 24-box (3x8) A4 sticker sheet right on screen where the user can click
-    any box (#1 to #24) to toggle printing for that box, and opens a clean 1-page print window on click.
+    Renders an interactive 24-box (3x8) A4 sticker sheet where each box (#1 to #24) can have
+    its own product/barcode from items_catalog, and clicking any box toggles whether that box prints.
     """
     catalog_json = json.dumps(items_catalog)
-    selected_json = json.dumps(sorted(list(set(selected_box_indices))))
-    active_key_json = json.dumps(active_item_key)
+    box_map_json = json.dumps(box_item_map)
+    enabled_json = json.dumps(sorted(list(set(enabled_box_indices))))
 
     component_html = f"""
     <!DOCTYPE html>
@@ -495,7 +495,7 @@ def render_interactive_24_sheet_and_print(items_catalog, selected_box_indices, a
             font-size: 9px;
             color: #64748b;
             font-weight: 700;
-            background: rgba(255,255,255,0.85);
+            background: rgba(255,255,255,0.88);
             padding: 0 2px;
             border-radius: 2px;
         }}
@@ -523,11 +523,12 @@ def render_interactive_24_sheet_and_print(items_catalog, selected_box_indices, a
 
         <script>
             const catalog = {catalog_json};
-            const activeKey = {active_key_json};
-            let selectedSet = new Set({selected_json});
+            const boxItemMap = {box_map_json};
+            let selectedSet = new Set({enabled_json});
 
-            function getActiveItem() {{
-                return catalog[activeKey] || null;
+            function getItemForBox(boxNum) {{
+                const key = boxItemMap[String(boxNum)];
+                return (key && catalog[key]) ? catalog[key] : null;
             }}
 
             function updateSummary() {{
@@ -540,11 +541,13 @@ def render_interactive_24_sheet_and_print(items_catalog, selected_box_indices, a
             function renderSheet() {{
                 const sheet = document.getElementById("stickerSheet");
                 sheet.innerHTML = "";
-                const item = getActiveItem();
 
                 for (let i = 1; i <= 24; i++) {{
+                    const item = getItemForBox(i);
+                    const isActive = selectedSet.has(i) && item !== null;
+
                     const cell = document.createElement("div");
-                    cell.className = "box-cell" + (selectedSet.has(i) ? " selected" : "");
+                    cell.className = "box-cell" + (isActive ? " selected" : "");
                     cell.onclick = function() {{
                         if (selectedSet.has(i)) {{
                             selectedSet.delete(i);
@@ -559,7 +562,7 @@ def render_interactive_24_sheet_and_print(items_catalog, selected_box_indices, a
                     numTag.innerText = "#" + i;
                     cell.appendChild(numTag);
 
-                    if (selectedSet.has(i) && item) {{
+                    if (isActive) {{
                         const imgEl = document.createElement("img");
                         imgEl.className = "sticker-img";
                         imgEl.src = "data:image/png;base64," + item.b64;
@@ -567,7 +570,7 @@ def render_interactive_24_sheet_and_print(items_catalog, selected_box_indices, a
                     }} else {{
                         const hintEl = document.createElement("span");
                         hintEl.className = "box-empty-hint";
-                        hintEl.innerText = "Empty";
+                        hintEl.innerText = item ? "Off" : "Empty";
                         cell.appendChild(hintEl);
                     }}
 
@@ -583,20 +586,22 @@ def render_interactive_24_sheet_and_print(items_catalog, selected_box_indices, a
 
             function triggerSinglePagePrint() {{
                 const arr = Array.from(selectedSet).sort((a, b) => a - b);
-                if (arr.length === 0) {{
-                    alert("Pehle kam se kam 1 sticker box select karein.");
-                    return;
-                }}
-                const item = getActiveItem();
-                if (!item) return;
-
+                let printableCount = 0;
                 let cellsMarkup = "";
+
                 for (let i = 1; i <= 24; i++) {{
-                    if (selectedSet.has(i)) {{
+                    const item = getItemForBox(i);
+                    if (selectedSet.has(i) && item) {{
+                        printableCount += 1;
                         cellsMarkup += '<div class="cell"><img src="data:image/png;base64,' + item.b64 + '" /></div>';
                     }} else {{
                         cellsMarkup += '<div class="cell"></div>';
                     }}
+                }}
+
+                if (printableCount === 0) {{
+                    alert("Pehle kam se kam 1 active sticker box select karein.");
+                    return;
                 }}
 
                 const printWin = window.open("", "_blank", "width=850,height=1100");
@@ -1153,7 +1158,7 @@ else:
     # --- SECTION 1.5: 24-STICKER A4 GRID PRINT (63.5mm x 33.9mm, 3x8) ---
     elif menu == "🖨️ Print 24-Sticker A4 (63.5x33.9mm)":
         st.title("🖨️ Print 24-Sticker A4 Sheet (63.5mm × 33.9mm)")
-        st.write("Pehle sticker aur boxes chunein — print tab tak shuru nahi hoga jab tak aap print button na dabayein.")
+        st.write("Pehle sticker aur boxes chunein — ya 'Sab Barcodes' mode mein sab barcodes dekhein aur kisi bhi box par apna barcode lagayein.")
         st.markdown("---")
 
         conn = get_db_connection()
@@ -1163,82 +1168,192 @@ else:
         if p_df.empty:
             st.info("Print karne ke liye koi products nahi hain.")
         else:
-            item_dict_p = {
-                f"{row['item_name'].upper()} (ID: {row['barcode_id']})": (str(row["barcode_id"]), row["item_name"], row["barcode_id"])
-                for _, row in p_df.iterrows()
-            }
-            selected_p_str = st.selectbox("1️⃣ Kaunsa Sticker / Product Print Karna Hai?", list(item_dict_p.keys()), key="a4_24_sel_prod")
-            active_key, p_name, p_barcode = item_dict_p[selected_p_str]
-
-            c_start, c_qty = st.columns(2)
-            with c_start:
-                start_box = st.number_input("2️⃣ Start Box # (1 to 24)", min_value=1, max_value=24, value=1, step=1)
-            max_avail = 25 - int(start_box)
-            with c_qty:
-                qty = st.number_input("3️⃣ Kitne Stickers Chahiye?", min_value=1, max_value=max_avail, value=min(6, max_avail), step=1)
-
-            default_boxes = list(range(int(start_box), min(25, int(start_box) + int(qty))))
-            manual_boxes_str = st.text_input(
-                "4️⃣ Ya Specific Box Numbers Likhein (Optional, comma se alag karein e.g. 1, 2, 5, 12)",
-                value=", ".join(str(x) for x in default_boxes),
-                key="a4_24_manual_boxes",
+            view_mode = st.radio(
+                "View / Print Mode",
+                ["🎯 Ek Product (24-Box Sheet)", "📋 Sab Barcodes (All Products Sheet & List)"],
+                horizontal=True,
+                key="a4_24_view_mode",
             )
+            st.markdown("---")
 
-            parsed_boxes = []
-            for part in manual_boxes_str.split(","):
-                p_clean = part.strip()
-                if p_clean.isdigit():
-                    b_num = int(p_clean)
-                    if 1 <= b_num <= 24 and b_num not in parsed_boxes:
-                        parsed_boxes.append(b_num)
-
-            single_io = generate_custom_barcode_image(p_name, p_barcode)
-            single_b64 = base64.b64encode(single_io.getvalue()).decode("utf-8")
-
-            catalog_payload = {
-                active_key: {
-                    "name": p_name,
-                    "barcode": p_barcode,
-                    "b64": single_b64,
+            all_catalog = {}
+            label_to_key = {}
+            for _, row in p_df.iterrows():
+                b_key = str(row["barcode_id"])
+                i_name = str(row["item_name"])
+                img_io_item = generate_custom_barcode_image(i_name, b_key)
+                b64_item = base64.b64encode(img_io_item.getvalue()).decode("utf-8")
+                all_catalog[b_key] = {
+                    "name": i_name,
+                    "barcode": b_key,
+                    "b64": b64_item,
                 }
-            }
+                label_to_key[f"{i_name.upper()} (ID: {b_key})"] = b_key
 
-            slots_24 = [None] * 24
-            for b_num in parsed_boxes:
-                slots_24[b_num - 1] = {
-                    "name": p_name,
-                    "barcode": p_barcode,
-                    "b64": single_b64,
-                }
+            if view_mode == "🎯 Ek Product (24-Box Sheet)":
+                selected_p_str = st.selectbox("1️⃣ Kaunsa Sticker / Product Print Karna Hai?", list(label_to_key.keys()), key="a4_24_sel_prod")
+                active_key = label_to_key[selected_p_str]
+                active_item = all_catalog[active_key]
+                p_name = active_item["name"]
+                p_barcode = active_item["barcode"]
 
-            col_dl1, col_dl2 = st.columns(2)
-            with col_dl1:
-                if st.download_button(
-                    label="💾 Download Single Sticker PNG",
-                    data=single_io,
-                    file_name=f"{p_name}_{p_barcode}_63.5x33.9mm.png",
-                    mime="image/png",
-                ):
-                    record_download_history(p_name, p_barcode, st.session_state.username)
+                c_start, c_qty = st.columns(2)
+                with c_start:
+                    start_box = st.number_input("2️⃣ Start Box # (1 to 24)", min_value=1, max_value=24, value=1, step=1)
+                max_avail = 25 - int(start_box)
+                with c_qty:
+                    qty = st.number_input("3️⃣ Kitne Stickers Chahiye?", min_value=1, max_value=max_avail, value=min(6, max_avail), step=1)
 
-            with col_dl2:
-                printable_a4_html = build_a4_24_grid_html(slots_24, auto_print=False)
-                if st.download_button(
-                    label="📄 Download 1-Page A4 Print File (.html)",
-                    data=printable_a4_html.encode("utf-8"),
-                    file_name=f"A4_24_Stickers_{p_name}_{p_barcode}.html",
-                    mime="text/html",
-                ):
-                    record_download_history(p_name, p_barcode, st.session_state.username)
+                default_boxes = list(range(int(start_box), min(25, int(start_box) + int(qty))))
+                manual_boxes_str = st.text_input(
+                    "4️⃣ Ya Specific Box Numbers Likhein (Optional, comma se alag karein e.g. 1, 2, 5, 12)",
+                    value=", ".join(str(x) for x in default_boxes),
+                    key="a4_24_manual_boxes",
+                )
 
-            st.markdown("#### 📋 Interactive 24-Box Sheet (Kisi bhi box par click karke ON/OFF karein, phir 'Print Selected (1 Page)' dabayein)")
-            render_interactive_24_sheet_and_print(
-                items_catalog=catalog_payload,
-                selected_box_indices=parsed_boxes,
-                active_item_key=active_key,
-            )
+                parsed_boxes = []
+                for part in manual_boxes_str.split(","):
+                    p_clean = part.strip()
+                    if p_clean.isdigit():
+                        b_num = int(p_clean)
+                        if 1 <= b_num <= 24 and b_num not in parsed_boxes:
+                            parsed_boxes.append(b_num)
 
-            st.info("💡 **Print Selected (1 Page)** dabane par alag clean print window khulegi jisme **1 sheet of paper** hi banega. Agar browser popup block kare toh **Download 1-Page A4 Print File (.html)** download karke khol lein.")
+                single_io = generate_custom_barcode_image(p_name, p_barcode)
+                box_item_map = {str(b_num): active_key for b_num in parsed_boxes}
+
+                slots_24 = [None] * 24
+                for b_num in parsed_boxes:
+                    slots_24[b_num - 1] = active_item
+
+                col_dl1, col_dl2 = st.columns(2)
+                with col_dl1:
+                    if st.download_button(
+                        label="💾 Download Single Sticker PNG",
+                        data=single_io,
+                        file_name=f"{p_name}_{p_barcode}_63.5x33.9mm.png",
+                        mime="image/png",
+                    ):
+                        record_download_history(p_name, p_barcode, st.session_state.username)
+
+                with col_dl2:
+                    printable_a4_html = build_a4_24_grid_html(slots_24, auto_print=False)
+                    if st.download_button(
+                        label="📄 Download 1-Page A4 Print File (.html)",
+                        data=printable_a4_html.encode("utf-8"),
+                        file_name=f"A4_24_Stickers_{p_name}_{p_barcode}.html",
+                        mime="text/html",
+                    ):
+                        record_download_history(p_name, p_barcode, st.session_state.username)
+
+                st.markdown("#### 📋 Interactive 24-Box Sheet (Kisi bhi box par click karke ON/OFF karein, phir 'Print Selected (1 Page)' dabayein)")
+                render_interactive_24_sheet_and_print(
+                    items_catalog={active_key: active_item},
+                    box_item_map=box_item_map,
+                    enabled_box_indices=parsed_boxes,
+                )
+
+                st.info("💡 **Print Selected (1 Page)** dabane par alag clean print window khulegi jisme **1 sheet of paper** hi banega. Agar browser popup block kare toh **Download 1-Page A4 Print File (.html)** download karke khol lein.")
+
+            else:
+                st.subheader("📋 Sab Saved Barcodes (All Products)")
+                search_all_bc = st.text_input("🔍 Sab Barcodes Mein Search Karein (Product Name ya Barcode ID)...", "", key="search_all_bc_mode").strip().lower()
+
+                filtered_df = p_df
+                if search_all_bc:
+                    filtered_df = p_df[
+                        p_df["item_name"].str.lower().str.contains(search_all_bc, na=False)
+                        | p_df["barcode_id"].astype(str).str.lower().str.contains(search_all_bc, na=False)
+                    ]
+
+                if filtered_df.empty:
+                    st.info("Koi matching barcode nahi mila.")
+                else:
+                    all_labels = list(label_to_key.keys())
+                    default_first_label = all_labels[0]
+
+                    with st.expander("🧩 Mixed 24-Box Sheet (Alag-Alag Barcodes Ek Hi Sheet Par)", expanded=True):
+                        c_fill_from, c_fill_to = st.columns(2)
+                        with c_fill_from:
+                            fill_start = st.number_input("Fill From Box #", min_value=1, max_value=24, value=1, step=1, key="mix_fill_start")
+                        with c_fill_to:
+                            fill_end = st.number_input("Fill Till Box #", min_value=int(fill_start), max_value=24, value=min(24, int(fill_start) + len(filtered_df) - 1), step=1, key="mix_fill_end")
+
+                        filtered_keys = [str(r["barcode_id"]) for _, r in filtered_df.iterrows()]
+                        mixed_map = {}
+                        mixed_enabled = []
+
+                        for idx_box in range(int(fill_start), int(fill_end) + 1):
+                            item_idx = (idx_box - int(fill_start)) % len(filtered_keys)
+                            chosen_k = filtered_keys[item_idx]
+                            mixed_map[str(idx_box)] = chosen_k
+                            mixed_enabled.append(idx_box)
+
+                        custom_box_override = st.text_input(
+                            "Specific Box Override (Optional — format `box:barcode_id`, e.g. `1:0000000000001, 2:0000000000002`)",
+                            value="",
+                            key="mix_box_override",
+                        )
+                        if custom_box_override.strip():
+                            for pair in custom_box_override.split(","):
+                                if ":" in pair:
+                                    b_part, k_part = pair.split(":", 1)
+                                    b_s = b_part.strip()
+                                    k_s = k_part.strip()
+                                    if b_s.isdigit() and 1 <= int(b_s) <= 24 and k_s in all_catalog:
+                                        mixed_map[b_s] = k_s
+                                        if int(b_s) not in mixed_enabled:
+                                            mixed_enabled.append(int(b_s))
+
+                        slots_mixed = [None] * 24
+                        for b_num in mixed_enabled:
+                            k_val = mixed_map.get(str(b_num))
+                            if k_val and k_val in all_catalog:
+                                slots_mixed[b_num - 1] = all_catalog[k_val]
+
+                        mixed_html = build_a4_24_grid_html(slots_mixed, auto_print=False)
+                        st.download_button(
+                            label="📄 Download Mixed 1-Page A4 Print File (.html)",
+                            data=mixed_html.encode("utf-8"),
+                            file_name="A4_24_Mixed_Stickers.html",
+                            mime="text/html",
+                            key="dl_mixed_a4_html",
+                        )
+
+                        render_interactive_24_sheet_and_print(
+                            items_catalog=all_catalog,
+                            box_item_map=mixed_map,
+                            enabled_box_indices=mixed_enabled,
+                        )
+
+                    st.markdown("---")
+                    st.subheader("🏷️ Sab Barcodes Ki List")
+                    for _, row in filtered_df.iterrows():
+                        r_id = row["id"]
+                        r_name = str(row["item_name"])
+                        r_barcode = str(row["barcode_id"])
+                        r_price = row["price"]
+                        r_slot = row["slot_category"]
+
+                        st.markdown(f"**{r_name.upper()}** — Barcode ID: `{r_barcode}` | Price: {r_price or 'N/A'} | Slot: {r_slot or 'N/A'}")
+                        r_img_io = generate_custom_barcode_image(r_name, r_barcode)
+                        st.image(r_img_io, width=280)
+
+                        c_b_dl, c_b_pr = st.columns(2)
+                        with c_b_dl:
+                            if st.download_button(
+                                label="💾 Download PNG",
+                                data=r_img_io,
+                                file_name=f"{r_name}_{r_barcode}.png",
+                                mime="image/png",
+                                key=f"all_list_dl_{r_id}",
+                            ):
+                                record_download_history(r_name, r_barcode, st.session_state.username)
+                        with c_b_pr:
+                            if st.button("🖨️ Print Single Sticker", key=f"all_list_pr_{r_id}"):
+                                record_download_history(r_name, r_barcode, st.session_state.username)
+                                html(build_print_html(r_img_io), height=120)
+                        st.markdown("---")
 
     # --- SECTION 2: APP DOWNLOADED HISTORY ---
     elif menu == "📂 App Downloaded History":
