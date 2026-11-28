@@ -305,7 +305,7 @@ def build_print_html(img_io):
     </html>
     """
 
-def build_a4_40_grid_html(slots_data):
+def build_a4_40_grid_html(slots_data, auto_print=True):
     """slots_data: list of 40 items (each dict with name, barcode, b64 or None for blank)."""
     cells_html = []
     for idx in range(40):
@@ -323,9 +323,25 @@ def build_a4_40_grid_html(slots_data):
             cells_html.append('<div class="label-cell blank-cell"></div>')
 
     grid_body = "\n".join(cells_html)
+    print_script = (
+        """
+        <script>
+            window.onload = function() {
+                setTimeout(function() {
+                    window.print();
+                }, 300);
+            };
+        </script>
+        """
+        if auto_print
+        else ""
+    )
+
     return f"""
     <html>
     <head>
+        <meta charset="utf-8" />
+        <title>A4 40-Sticker Sheet (52.5mm x 29.7mm)</title>
         <style>
             @page {{
                 size: A4 portrait;
@@ -337,12 +353,12 @@ def build_a4_40_grid_html(slots_data):
             body {{
                 margin: 0;
                 padding: 0;
-                background: #f5f5f5;
+                background: #ffffff;
                 font-family: Arial, sans-serif;
             }}
             .a4-sheet {{
                 width: 210mm;
-                min-height: 297mm;
+                height: 297mm;
                 margin: 0 auto;
                 background: white;
                 display: grid;
@@ -391,13 +407,7 @@ def build_a4_40_grid_html(slots_data):
         <div class="a4-sheet">
             {grid_body}
         </div>
-        <script>
-            window.onload = function() {{
-                setTimeout(function() {{
-                    window.print();
-                }}, 300);
-            }};
-        </script>
+        {print_script}
     </body>
     </html>
     """
@@ -916,13 +926,19 @@ else:
                 single_io = generate_custom_barcode_image(p_name, p_barcode)
                 single_b64 = base64.b64encode(single_io.getvalue()).decode("utf-8")
 
+                slots = [None] * 40
+                s_idx = int(start_box) - 1
+                for i in range(int(qty)):
+                    if s_idx + i < 40:
+                        slots[s_idx + i] = {"name": p_name, "barcode": p_barcode, "b64": single_b64}
+
                 st.markdown("#### 🏷️ Single Sticker Preview (52.5mm × 29.7mm)")
                 st.image(single_io, width=280)
 
-                col_a1, col_a2 = st.columns(2)
+                col_a1, col_a2, col_a3 = st.columns(3)
                 with col_a1:
                     if st.download_button(
-                        label="💾 Download Single Sticker PNG",
+                        label="💾 Download Single PNG",
                         data=single_io,
                         file_name=f"{p_name}_{p_barcode}_52.5x29.7mm.png",
                         mime="image/png",
@@ -930,17 +946,22 @@ else:
                         record_download_history(p_name, p_barcode, st.session_state.username)
 
                 with col_a2:
-                    if st.button("🖨️ Print A4 Sheet (40-Grid)", type="primary"):
-                        slots = [None] * 40
-                        s_idx = int(start_box) - 1
-                        for i in range(int(qty)):
-                            if s_idx + i < 40:
-                                slots[s_idx + i] = {"name": p_name, "barcode": p_barcode, "b64": single_b64}
+                    printable_a4_html = build_a4_40_grid_html(slots, auto_print=True)
+                    if st.download_button(
+                        label="📄 Download A4 Print File (.html)",
+                        data=printable_a4_html.encode("utf-8"),
+                        file_name=f"A4_40_Stickers_{p_name}_{p_barcode}.html",
+                        mime="text/html",
+                    ):
                         record_download_history(p_name, p_barcode, st.session_state.username)
-                        html(build_a4_40_grid_html(slots), height=140)
-                        st.success(f"✅ Box #{int(start_box)} se {int(qty)} stickers ka A4 print dialog open ho gaya hai!")
 
-                st.info("💡 **Tip:** Print dialog mein Paper Size **A4**, Scale **100% / Actual Size**, aur Margins **None** rakhein.")
+                with col_a3:
+                    if st.button("🖨️ Print A4 Sheet (40-Grid)", type="primary"):
+                        record_download_history(p_name, p_barcode, st.session_state.username)
+                        html(printable_a4_html, height=140)
+                        st.success(f"✅ Box #{int(start_box)} se {int(qty)} stickers ka A4 print dialog trigger ho gaya hai!")
+
+                st.info("💡 **Tip:** Agar browser ke andar popup print sahi size na dikhaye, toh **Download A4 Print File (.html)** download karke double-click se browser mein kholo — wahan exact `52.5mm × 29.7mm` ke 40 boxes print honge. Printer **Canon G3010**, Paper Size **A4**, Scale **100%**, aur Margins **None** rakhein.")
 
             else:
                 search_print = st.text_input("🔍 Search Barcode / Product...", "", key="search_all_40").strip().lower()
