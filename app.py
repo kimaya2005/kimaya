@@ -200,7 +200,7 @@ def record_download_history(item_name, barcode_id, username):
     except Exception:
         pass
 
-# Helper function: Sized for 63.5mm x 33.9mm (24 stickers per A4 sheet, 3x8) with CENTERED product name
+# Helper function: Sized for 63.5mm x 33.9mm (24 stickers per A4 sheet, 3x8) with SINGLE centered product name
 def generate_custom_barcode_image(item_name, barcode_text):
     scale = 3
 
@@ -314,7 +314,6 @@ def build_a4_24_grid_html(slots_data, auto_print=False):
             cells_html.append(
                 f"""
                 <div class="label-cell">
-                    <div class="prod-name">{slot['name'].upper()}</div>
                     <img src="data:image/png;base64,{slot['b64']}" />
                 </div>
                 """
@@ -359,7 +358,6 @@ def build_a4_24_grid_html(slots_data, auto_print=False):
                 height: 294mm;
                 overflow: hidden;
                 background: #ffffff;
-                font-family: Arial, sans-serif;
             }}
             .a4-sheet {{
                 width: 190.5mm;
@@ -376,28 +374,14 @@ def build_a4_24_grid_html(slots_data, auto_print=False):
                 width: 63.5mm;
                 height: 33.75mm;
                 display: flex;
-                flex-direction: column;
                 justify-content: center;
                 align-items: center;
-                padding: 1mm 2mm;
+                padding: 1mm;
                 overflow: hidden;
-            }}
-            .prod-name {{
-                font-size: 7.5pt;
-                font-weight: bold;
-                text-align: center;
-                white-space: nowrap;
-                overflow: hidden;
-                text-overflow: ellipsis;
-                max-width: 59mm;
-                margin-bottom: 0.6mm;
-                color: #000;
             }}
             .label-cell img {{
-                max-width: 59.5mm;
-                max-height: 24.5mm;
-                width: auto;
-                height: auto;
+                width: 61.5mm;
+                height: 31.8mm;
                 object-fit: contain;
             }}
         </style>
@@ -411,15 +395,14 @@ def build_a4_24_grid_html(slots_data, auto_print=False):
     </html>
     """
 
-def render_interactive_24_sheet_and_print(items_catalog, selected_box_indices, active_item_key, print_now=False):
+def render_interactive_24_sheet_and_print(items_catalog, selected_box_indices, active_item_key):
     """
     Renders an interactive 24-box (3x8) A4 sticker sheet right on screen where the user can click
-    any box (#1 to #24) to toggle printing for that box, and prints strictly 1 A4 page on demand.
+    any box (#1 to #24) to toggle printing for that box, and opens a clean 1-page print window on click.
     """
     catalog_json = json.dumps(items_catalog)
     selected_json = json.dumps(sorted(list(set(selected_box_indices))))
     active_key_json = json.dumps(active_item_key)
-    auto_print_js = "true" if print_now else "false"
 
     component_html = f"""
     <!DOCTYPE html>
@@ -460,7 +443,7 @@ def render_interactive_24_sheet_and_print(items_catalog, selected_box_indices, a
         button.action-btn {{
             border: none;
             border-radius: 5px;
-            padding: 7px 12px;
+            padding: 7px 14px;
             font-size: 12px;
             font-weight: 600;
             cursor: pointer;
@@ -488,7 +471,6 @@ def render_interactive_24_sheet_and_print(items_catalog, selected_box_indices, a
         .box-cell {{
             border: 1px dashed #cbd5e1;
             display: flex;
-            flex-direction: column;
             justify-content: center;
             align-items: center;
             padding: 2px;
@@ -513,86 +495,27 @@ def render_interactive_24_sheet_and_print(items_catalog, selected_box_indices, a
             font-size: 9px;
             color: #64748b;
             font-weight: 700;
+            background: rgba(255,255,255,0.85);
+            padding: 0 2px;
+            border-radius: 2px;
         }}
         .box-empty-hint {{
             font-size: 10px;
             color: #94a3b8;
         }}
-        .sticker-title {{
-            font-size: 8.5px;
-            font-weight: 700;
-            color: #000000;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            max-width: 95%;
-            line-height: 1.1;
-            margin-top: 4px;
-        }}
         .sticker-img {{
-            max-width: 95%;
-            max-height: 70%;
+            max-width: 96%;
+            max-height: 92%;
             object-fit: contain;
-        }}
-
-        @media print {{
-            @page {{
-                size: A4 portrait;
-                margin: 0;
-            }}
-            html, body {{
-                width: 210mm;
-                height: 292mm;
-                margin: 0 !important;
-                padding: 0 !important;
-                overflow: hidden !important;
-                background: #ffffff !important;
-            }}
-            .top-bar {{
-                display: none !important;
-            }}
-            .sheet-wrapper {{
-                width: 190.5mm !important;
-                height: 268mm !important;
-                max-width: 190.5mm !important;
-                aspect-ratio: auto !important;
-                margin: 11.5mm 9.75mm 0 9.75mm !important;
-                padding: 0 !important;
-                border: none !important;
-                box-shadow: none !important;
-                grid-template-columns: repeat(3, 63.5mm) !important;
-                grid-template-rows: repeat(8, 33.5mm) !important;
-                page-break-after: avoid !important;
-                break-after: avoid !important;
-            }}
-            .box-cell {{
-                border: none !important;
-                background: #ffffff !important;
-                width: 63.5mm !important;
-                height: 33.5mm !important;
-                cursor: default !important;
-            }}
-            .box-num, .box-empty-hint {{
-                display: none !important;
-            }}
-            .sticker-title {{
-                font-size: 7.5pt !important;
-                margin-top: 0 !important;
-                margin-bottom: 0.5mm !important;
-            }}
-            .sticker-img {{
-                max-width: 59.5mm !important;
-                max-height: 24mm !important;
-            }}
         }}
     </style>
     </head>
     <body>
         <div class="top-bar">
-            <div class="info" id="selectionSummary">Selected Boxes: 0 / 24 (Click any box on sheet to toggle)</div>
+            <div class="info" id="selectionSummary">Selected: 0 / 24 — Click any box to toggle</div>
             <div class="btn-group">
                 <button type="button" class="action-btn btn-clear" onclick="clearAllBoxes()">Clear Boxes</button>
-                <button type="button" class="action-btn btn-print" onclick="triggerSinglePagePrint()">Print Selected (1 Page)</button>
+                <button type="button" class="action-btn btn-print" onclick="triggerSinglePagePrint()">🖨️ Print Selected (1 Page)</button>
             </div>
         </div>
 
@@ -637,11 +560,6 @@ def render_interactive_24_sheet_and_print(items_catalog, selected_box_indices, a
                     cell.appendChild(numTag);
 
                     if (selectedSet.has(i) && item) {{
-                        const titleEl = document.createElement("div");
-                        titleEl.className = "sticker-title";
-                        titleEl.innerText = item.name.toUpperCase();
-                        cell.appendChild(titleEl);
-
                         const imgEl = document.createElement("img");
                         imgEl.className = "sticker-img";
                         imgEl.src = "data:image/png;base64," + item.b64;
@@ -669,16 +587,88 @@ def render_interactive_24_sheet_and_print(items_catalog, selected_box_indices, a
                     alert("Pehle kam se kam 1 sticker box select karein.");
                     return;
                 }}
-                window.print();
+                const item = getActiveItem();
+                if (!item) return;
+
+                let cellsMarkup = "";
+                for (let i = 1; i <= 24; i++) {{
+                    if (selectedSet.has(i)) {{
+                        cellsMarkup += '<div class="cell"><img src="data:image/png;base64,' + item.b64 + '" /></div>';
+                    }} else {{
+                        cellsMarkup += '<div class="cell"></div>';
+                    }}
+                }}
+
+                const printWin = window.open("", "_blank", "width=850,height=1100");
+                if (!printWin) {{
+                    alert("Browser ne popup block kiya hai. Please allow popups for this site ya Download 1-Page A4 Print File (.html) use karein.");
+                    return;
+                }}
+
+                printWin.document.open();
+                printWin.document.write(`
+                    <!DOCTYPE html>
+                    <html>
+                    <head>
+                        <meta charset="utf-8" />
+                        <title>Print 1 A4 Sheet (24 Stickers)</title>
+                        <style>
+                            @page {{
+                                size: A4 portrait;
+                                margin: 0;
+                            }}
+                            * {{
+                                box-sizing: border-box;
+                            }}
+                            html, body {{
+                                margin: 0;
+                                padding: 0;
+                                width: 210mm;
+                                height: 294mm;
+                                overflow: hidden;
+                                background: #ffffff;
+                            }}
+                            .sheet {{
+                                width: 190.5mm;
+                                height: 270mm;
+                                margin: 12mm 9.75mm 0 9.75mm;
+                                display: grid;
+                                grid-template-columns: repeat(3, 63.5mm);
+                                grid-template-rows: repeat(8, 33.75mm);
+                            }}
+                            .cell {{
+                                width: 63.5mm;
+                                height: 33.75mm;
+                                display: flex;
+                                justify-content: center;
+                                align-items: center;
+                                padding: 1mm;
+                                overflow: hidden;
+                            }}
+                            .cell img {{
+                                width: 61.5mm;
+                                height: 31.8mm;
+                                object-fit: contain;
+                            }}
+                        </style>
+                    </head>
+                    <body>
+                        <div class="sheet">${{cellsMarkup}}</div>
+                        <script>
+                            window.onload = function() {{
+                                setTimeout(function() {{
+                                    window.focus();
+                                    window.print();
+                                }}, 250);
+                            }};
+                        <\/script>
+                    </body>
+                    </html>
+                `);
+                printWin.document.close();
             }}
 
             renderSheet();
-
-            if ({auto_print_js}) {{
-                setTimeout(function() {{
-                    triggerSinglePagePrint();
-                }}, 250);
-            }}
         </script>
     </body>
     </html>
@@ -1246,10 +1236,9 @@ else:
                 items_catalog=catalog_payload,
                 selected_box_indices=parsed_boxes,
                 active_item_key=active_key,
-                print_now=False,
             )
 
-            st.info("💡 Print dialog khulne par **Pages: All** (ab sirf 1 hi page banega), **Paper Size: A4**, **Scale: 100%**, aur **Margins: None** rakhein.")
+            st.info("💡 **Print Selected (1 Page)** dabane par alag clean print window khulegi jisme **1 sheet of paper** hi banega. Agar browser popup block kare toh **Download 1-Page A4 Print File (.html)** download karke khol lein.")
 
     # --- SECTION 2: APP DOWNLOADED HISTORY ---
     elif menu == "📂 App Downloaded History":
