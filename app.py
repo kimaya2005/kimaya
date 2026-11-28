@@ -199,17 +199,17 @@ def record_download_history(item_name, barcode_id, username):
     except Exception:
         pass
 
-# Helper function: Sized for 52.5mm x 29.7mm (40 stickers per A4 sheet) with CENTERED product name
+# Helper function: Sized for 63.5mm x 33.9mm (24 stickers per A4 sheet, 3x8) with CENTERED product name
 def generate_custom_barcode_image(item_name, barcode_text):
     scale = 3
 
     writer_options = {
-        "module_width": 0.28 * scale,
-        "module_height": 9.5 * scale,
-        "quiet_zone": 5 * scale,
+        "module_width": 0.30 * scale,
+        "module_height": 11.0 * scale,
+        "quiet_zone": 6 * scale,
         "write_text": True,
-        "font_size": 10 * scale,
-        "text_distance": 3.5 * scale,
+        "font_size": 11 * scale,
+        "text_distance": 4.0 * scale,
     }
 
     rv = BytesIO()
@@ -219,8 +219,9 @@ def generate_custom_barcode_image(item_name, barcode_text):
     barcode_img = Image.open(rv)
     bw, bh = barcode_img.size
 
-    target_w = 525 * scale
-    target_h = 297 * scale
+    # Target aspect ratio 63.5mm x 33.9mm
+    target_w = 635 * scale
+    target_h = 339 * scale
     sticker_img = Image.new("RGB", (target_w, target_h), "white")
     draw = ImageDraw.Draw(sticker_img)
 
@@ -235,14 +236,14 @@ def generate_custom_barcode_image(item_name, barcode_text):
 
     for path in font_paths:
         try:
-            font_title = ImageFont.truetype(path, 22 * scale)
+            font_title = ImageFont.truetype(path, 25 * scale)
             break
         except IOError:
             continue
 
     if not font_title:
         try:
-            font_title = ImageFont.load_default(size=22 * scale)
+            font_title = ImageFont.load_default(size=25 * scale)
         except TypeError:
             font_title = ImageFont.load_default()
 
@@ -250,19 +251,19 @@ def generate_custom_barcode_image(item_name, barcode_text):
     bbox = draw.textbbox((0, 0), text_to_draw, font=font_title)
     text_w = bbox[2] - bbox[0]
     if text_w > target_w - 30 * scale:
-        text_to_draw = text_to_draw[:26] + "..."
+        text_to_draw = text_to_draw[:30] + "..."
         bbox = draw.textbbox((0, 0), text_to_draw, font=font_title)
         text_w = bbox[2] - bbox[0]
 
     text_x = max(5 * scale, (target_w - text_w) // 2)
-    text_y = 10 * scale
+    text_y = 12 * scale
     draw.text((text_x, text_y), text_to_draw, fill="black", font=font_title)
 
-    line_y = 42 * scale
-    draw.line([(16 * scale, line_y), (target_w - 16 * scale, line_y)], fill="black", width=2 * scale)
+    line_y = 48 * scale
+    draw.line([(18 * scale, line_y), (target_w - 18 * scale, line_y)], fill="black", width=2 * scale)
 
-    avail_h = target_h - (line_y + 12 * scale)
-    avail_w = target_w - 24 * scale
+    avail_h = target_h - (line_y + 14 * scale)
+    avail_w = target_w - 28 * scale
     ratio = min(avail_w / max(1, bw), avail_h / max(1, bh))
     new_bw = max(1, int(bw * ratio))
     new_bh = max(1, int(bh * ratio))
@@ -288,9 +289,9 @@ def build_print_html(img_io):
     <html>
     <head>
         <style>
-            @page {{ size: 52.5mm 29.7mm; margin: 0; }}
+            @page {{ size: 63.5mm 33.9mm; margin: 0; }}
             body {{ margin: 0; display: flex; justify-content: center; align-items: center; height: 100vh; background: white; }}
-            img {{ width: 52.5mm; height: 29.7mm; object-fit: contain; }}
+            img {{ width: 63.5mm; height: 33.9mm; object-fit: contain; }}
         </style>
     </head>
     <body>
@@ -304,10 +305,10 @@ def build_print_html(img_io):
     </html>
     """
 
-def build_a4_40_grid_html(slots_data, auto_print=True):
-    """slots_data: list of 40 items (each dict with name, barcode, b64 or None for blank)."""
+def build_a4_24_grid_html(slots_data, auto_print=True):
+    """slots_data: list of 24 items (3 cols x 8 rows, 63.5mm x 33.9mm)."""
     cells_html = []
-    for idx in range(40):
+    for idx in range(24):
         slot = slots_data[idx]
         if slot:
             cells_html.append(
@@ -340,7 +341,7 @@ def build_a4_40_grid_html(slots_data, auto_print=True):
     <html>
     <head>
         <meta charset="utf-8" />
-        <title>A4 40-Sticker Sheet (52.5mm x 29.7mm)</title>
+        <title>A4 24-Sticker Sheet (63.5mm x 33.9mm)</title>
         <style>
             @page {{
                 size: A4 portrait;
@@ -356,38 +357,38 @@ def build_a4_40_grid_html(slots_data, auto_print=True):
                 font-family: Arial, sans-serif;
             }}
             .a4-sheet {{
-                width: 210mm;
-                height: 297mm;
-                margin: 0 auto;
+                width: 190.5mm;
+                height: 271.2mm;
+                margin: 12.9mm 9.75mm;
                 background: white;
                 display: grid;
-                grid-template-columns: repeat(4, 52.5mm);
-                grid-template-rows: repeat(10, 29.7mm);
+                grid-template-columns: repeat(3, 63.5mm);
+                grid-template-rows: repeat(8, 33.9mm);
             }}
             .label-cell {{
-                width: 52.5mm;
-                height: 29.7mm;
+                width: 63.5mm;
+                height: 33.9mm;
                 display: flex;
                 flex-direction: column;
                 justify-content: center;
                 align-items: center;
-                padding: 1mm 1.5mm;
+                padding: 1.5mm 2mm;
                 overflow: hidden;
             }}
             .prod-name {{
-                font-size: 6.5pt;
+                font-size: 7.5pt;
                 font-weight: bold;
                 text-align: center;
                 white-space: nowrap;
                 overflow: hidden;
                 text-overflow: ellipsis;
-                max-width: 49mm;
-                margin-bottom: 0.5mm;
+                max-width: 59mm;
+                margin-bottom: 0.8mm;
                 color: #000;
             }}
             .label-cell img {{
-                max-width: 49.5mm;
-                max-height: 22mm;
+                max-width: 59.5mm;
+                max-height: 25mm;
                 width: auto;
                 height: auto;
                 object-fit: contain;
@@ -397,7 +398,7 @@ def build_a4_40_grid_html(slots_data, auto_print=True):
                     background: white;
                 }}
                 .a4-sheet {{
-                    margin: 0;
+                    margin: 12.9mm 9.75mm;
                 }}
             }}
         </style>
@@ -411,35 +412,36 @@ def build_a4_40_grid_html(slots_data, auto_print=True):
     </html>
     """
 
-def render_top_level_a4_print_overlay(slots_data):
-    """Renders an A4 sheet directly in the top DOM so @media print prints ONLY the 40-sticker A4 sheet."""
+def render_top_level_a4_24_overlay(slots_data):
+    """Renders 24-sticker grid (3x8, 63.5mm x 33.9mm) so @media print prints ONLY the sticker grid."""
     cells = []
-    for idx in range(40):
+    for idx in range(24):
         slot = slots_data[idx]
         if slot:
             cells.append(
-                f'<div class="raut-a4-cell"><div class="raut-a4-name">{slot["name"].upper()}</div><img src="data:image/png;base64,{slot["b64"]}" /></div>'
+                f'<div class="raut-a4-24-cell"><div class="raut-a4-24-name">{slot["name"].upper()}</div><img src="data:image/png;base64,{slot["b64"]}" /></div>'
             )
         else:
-            cells.append('<div class="raut-a4-cell"></div>')
+            cells.append('<div class="raut-a4-24-cell"></div>')
 
     grid_items_html = "".join(cells)
     st.markdown(
         f"""
         <style>
-            .raut-a4-screen-preview {{
+            .raut-a4-24-preview {{
                 width: 100%;
                 max-width: 720px;
                 aspect-ratio: 210 / 297;
                 border: 1px solid #ccc;
                 background: #ffffff;
                 display: grid;
-                grid-template-columns: repeat(4, 1fr);
-                grid-template-rows: repeat(10, 1fr);
+                grid-template-columns: repeat(3, 1fr);
+                grid-template-rows: repeat(8, 1fr);
+                padding: 4.3% 4.6%;
                 margin: 10px 0 18px 0;
             }}
-            .raut-a4-cell {{
-                border: 0.5px dashed #e0e0e0;
+            .raut-a4-24-cell {{
+                border: 0.5px dashed #dcdcdc;
                 display: flex;
                 flex-direction: column;
                 justify-content: center;
@@ -447,19 +449,19 @@ def render_top_level_a4_print_overlay(slots_data):
                 padding: 2px;
                 overflow: hidden;
             }}
-            .raut-a4-name {{
-                font-size: 8px;
+            .raut-a4-24-name {{
+                font-size: 9px;
                 font-weight: bold;
                 color: #000;
                 white-space: nowrap;
                 overflow: hidden;
                 text-overflow: ellipsis;
                 max-width: 95%;
-                line-height: 1.1;
+                line-height: 1.15;
             }}
-            .raut-a4-cell img {{
+            .raut-a4-24-cell img {{
                 max-width: 95%;
-                max-height: 72%;
+                max-height: 75%;
                 object-fit: contain;
             }}
             @media print {{
@@ -470,31 +472,31 @@ def render_top_level_a4_print_overlay(slots_data):
                 body * {{
                     visibility: hidden !important;
                 }}
-                .raut-a4-screen-preview, .raut-a4-screen-preview * {{
+                .raut-a4-24-preview, .raut-a4-24-preview * {{
                     visibility: visible !important;
                 }}
-                .raut-a4-screen-preview {{
+                .raut-a4-24-preview {{
                     position: fixed !important;
-                    left: 0 !important;
-                    top: 0 !important;
-                    width: 210mm !important;
-                    height: 297mm !important;
-                    max-width: 210mm !important;
+                    left: 9.75mm !important;
+                    top: 12.9mm !important;
+                    width: 190.5mm !important;
+                    height: 271.2mm !important;
+                    max-width: 190.5mm !important;
                     aspect-ratio: auto !important;
                     border: none !important;
                     margin: 0 !important;
                     padding: 0 !important;
-                    grid-template-columns: repeat(4, 52.5mm) !important;
-                    grid-template-rows: repeat(10, 29.7mm) !important;
+                    grid-template-columns: repeat(3, 63.5mm) !important;
+                    grid-template-rows: repeat(8, 33.9mm) !important;
                 }}
-                .raut-a4-cell {{
+                .raut-a4-24-cell {{
                     border: none !important;
-                    width: 52.5mm !important;
-                    height: 29.7mm !important;
+                    width: 63.5mm !important;
+                    height: 33.9mm !important;
                 }}
             }}
         </style>
-        <div class="raut-a4-screen-preview">{grid_items_html}</div>
+        <div class="raut-a4-24-preview">{grid_items_html}</div>
         """,
         unsafe_allow_html=True,
     )
@@ -526,8 +528,8 @@ if "active_custom_page_id" not in st.session_state:
 if "generated_preview_item" not in st.session_state:
     st.session_state.generated_preview_item = None
 
-if "trigger_a4_print" not in st.session_state:
-    st.session_state.trigger_a4_print = False
+if "trigger_a4_24_print" not in st.session_state:
+    st.session_state.trigger_a4_24_print = False
 
 if st.session_state.logged_in:
     conn = get_db_connection()
@@ -600,7 +602,7 @@ else:
                 "📊 Inventory Dashboard",
                 "📊 Excel Sheet & Notes",
                 "📦 App Barcode Storage", 
-                "🖨️ Print 40-Sticker A4 (52.5x29.7mm)",
+                "🖨️ Print 24-Sticker A4 (63.5x33.9mm)",
                 "📂 App Downloaded History", 
                 "♻️ Trash / Bin Folder", 
                 "📜 Activity Audit Logs",
@@ -616,7 +618,7 @@ else:
                 "📊 Inventory Dashboard",
                 "📊 Excel Sheet & Notes",
                 "📦 App Barcode Storage", 
-                "🖨️ Print 40-Sticker A4 (52.5x29.7mm)",
+                "🖨️ Print 24-Sticker A4 (63.5x33.9mm)",
                 "📂 App Downloaded History", 
                 "♻️ Trash / Bin Folder", 
                 "➕ Generate & Save Barcode", 
@@ -977,10 +979,10 @@ else:
                     st.caption(f"Record ID: #{item_id} | Price: {price or 'N/A'} | Slot/Cat: {slot_category or 'N/A'}")
                     st.markdown("---")
 
-    # --- SECTION 1.5: 40-STICKER A4 GRID PRINT (52.5mm x 29.7mm) ---
-    elif menu == "🖨️ Print 40-Sticker A4 (52.5x29.7mm)":
-        st.title("🖨️ Print 40-Sticker A4 Sheet (52.5mm × 29.7mm)")
-        st.write("Canon PIXMA G3010 ke liye 40-label A4 sheet (4 columns × 10 rows) layout. Pehle se use hue stickers skip karne ke liye Start Box chunein.")
+    # --- SECTION 1.5: 24-STICKER A4 GRID PRINT (63.5mm x 33.9mm, 3x8) ---
+    elif menu == "🖨️ Print 24-Sticker A4 (63.5x33.9mm)":
+        st.title("🖨️ Print 24-Sticker A4 Sheet (63.5mm × 33.9mm)")
+        st.write("Canon PIXMA G3010 ke liye 24-sticker A4 sheet (3 columns × 8 rows) layout. Pehle se use hue stickers skip karne ke liye Start Box chunein.")
         st.markdown("---")
 
         conn = get_db_connection()
@@ -994,7 +996,7 @@ else:
                 "Print Mode",
                 ["🎯 Ek Product ke Multiple Stickers", "📋 Sab Products Ek Ke Niche Ek"],
                 horizontal=True,
-                key="a4_40_mode",
+                key="a4_24_mode",
             )
             st.markdown("---")
 
@@ -1003,26 +1005,26 @@ else:
                     f"{row['item_name'].upper()} (ID: {row['barcode_id']})": (row["item_name"], row["barcode_id"])
                     for _, row in p_df.iterrows()
                 }
-                selected_p_str = st.selectbox("Select Product", list(item_dict_p.keys()), key="a4_sel_prod")
+                selected_p_str = st.selectbox("Select Product", list(item_dict_p.keys()), key="a4_24_sel_prod")
                 p_name, p_barcode = item_dict_p[selected_p_str]
 
                 c_start, c_qty = st.columns(2)
                 with c_start:
-                    start_box = st.number_input("Start from Box # (1 to 40)", min_value=1, max_value=40, value=1, step=1)
-                max_avail = 41 - int(start_box)
+                    start_box = st.number_input("Start from Box # (1 to 24)", min_value=1, max_value=24, value=1, step=1)
+                max_avail = 25 - int(start_box)
                 with c_qty:
-                    qty = st.number_input("Kitne Stickers Print Karne Hain?", min_value=1, max_value=max_avail, value=min(10, max_avail), step=1)
+                    qty = st.number_input("Kitne Stickers Print Karne Hain?", min_value=1, max_value=max_avail, value=min(6, max_avail), step=1)
 
                 single_io = generate_custom_barcode_image(p_name, p_barcode)
                 single_b64 = base64.b64encode(single_io.getvalue()).decode("utf-8")
 
-                slots = [None] * 40
+                slots = [None] * 24
                 s_idx = int(start_box) - 1
                 for i in range(int(qty)):
-                    if s_idx + i < 40:
+                    if s_idx + i < 24:
                         slots[s_idx + i] = {"name": p_name, "barcode": p_barcode, "b64": single_b64}
 
-                st.markdown("#### 🏷️ Single Sticker Preview (52.5mm × 29.7mm)")
+                st.markdown("#### 🏷️ Single Sticker Preview (63.5mm × 33.9mm)")
                 st.image(single_io, width=280)
 
                 col_a1, col_a2, col_a3 = st.columns(3)
@@ -1030,30 +1032,30 @@ else:
                     if st.download_button(
                         label="💾 Download Single PNG",
                         data=single_io,
-                        file_name=f"{p_name}_{p_barcode}_52.5x29.7mm.png",
+                        file_name=f"{p_name}_{p_barcode}_63.5x33.9mm.png",
                         mime="image/png",
                     ):
                         record_download_history(p_name, p_barcode, st.session_state.username)
 
                 with col_a2:
-                    printable_a4_html = build_a4_40_grid_html(slots, auto_print=True)
+                    printable_a4_html = build_a4_24_grid_html(slots, auto_print=True)
                     if st.download_button(
                         label="📄 Download A4 Print File (.html)",
                         data=printable_a4_html.encode("utf-8"),
-                        file_name=f"A4_40_Stickers_{p_name}_{p_barcode}.html",
+                        file_name=f"A4_24_Stickers_{p_name}_{p_barcode}.html",
                         mime="text/html",
                     ):
                         record_download_history(p_name, p_barcode, st.session_state.username)
 
                 with col_a3:
-                    if st.button("🖨️ Print A4 Sheet (40-Grid)", type="primary"):
+                    if st.button("🖨️ Print A4 Sheet (24-Grid)", type="primary"):
                         record_download_history(p_name, p_barcode, st.session_state.username)
-                        st.session_state.trigger_a4_print = True
+                        st.session_state.trigger_a4_24_print = True
 
-                render_top_level_a4_print_overlay(slots)
+                render_top_level_a4_24_overlay(slots)
 
-                if st.session_state.trigger_a4_print:
-                    st.session_state.trigger_a4_print = False
+                if st.session_state.trigger_a4_24_print:
+                    st.session_state.trigger_a4_24_print = False
                     html(
                         """
                         <script>
@@ -1065,10 +1067,10 @@ else:
                         height=0,
                     )
 
-                st.info("💡 **Tip:** **Print A4 Sheet (40-Grid)** dabane par sirf upar wala 40-box A4 sheet print hoga (sidebar aur menu print nahi honge). Destination **Canon G3010 series**, Paper Size **A4**, Scale **100%**, aur Margins **None** rakhein.")
+                st.info("💡 **Tip:** Print dialog mein Destination **Canon G3010 series**, Paper Size **A4**, Scale **100%**, aur Margins **None** rakhein.")
 
             else:
-                search_print = st.text_input("🔍 Search Barcode / Product...", "", key="search_all_40").strip().lower()
+                search_print = st.text_input("🔍 Search Barcode / Product...", "", key="search_all_24").strip().lower()
                 filtered_p_df = p_df
                 if search_print:
                     filtered_p_df = p_df[
@@ -1099,11 +1101,11 @@ else:
                                         data=item_img_io,
                                         file_name=f"Sticker_{r_name}_{r_barcode}.png",
                                         mime="image/png",
-                                        key=f"all_40_dl_{r_id}",
+                                        key=f"all_24_dl_{r_id}",
                                     ):
                                         record_download_history(r_name, r_barcode, st.session_state.username)
                                 with c_pr:
-                                    if st.button("🖨️ Direct Print", type="primary", key=f"all_40_pr_{r_id}"):
+                                    if st.button("🖨️ Direct Print", type="primary", key=f"all_24_pr_{r_id}"):
                                         record_download_history(r_name, r_barcode, st.session_state.username)
                                         html(build_print_html(item_img_io), height=120)
                             except Exception as e:
