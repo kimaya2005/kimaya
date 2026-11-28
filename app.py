@@ -1595,35 +1595,29 @@ else:
 
     if st.session_state.role == "Admin":
         menu = st.sidebar.radio(
-            "Navigation", 
+            "Navigation",
             [
                 "📊 Inventory Dashboard",
                 "📊 Excel Sheet & Notes",
-                "📦 App Barcode Storage", 
-                "🖨️ Print 24-Sticker A4 (63.5x33.9mm)",
-                "➕ Generate & Save Barcode", 
-                "⚙️ Manage & Edit Inventory",
-                "🏷️ Vendor Barcode Folder (105x70mm)",
-                "📂 App Downloaded History", 
-                "♻️ Trash / Bin Folder", 
+                "📦 Barcode Folder",
+                "🏷️ Vendor Barcode Folder",
+                "📂 App Downloaded History",
+                "♻️ Trash / Bin Folder",
                 "📜 Activity Audit Logs",
-                "⚙️ Manage Employee Access"
-            ]
+                "⚙️ Manage Employee Access",
+            ],
         )
     else:
         menu = st.sidebar.radio(
-            "Navigation", 
+            "Navigation",
             [
                 "📊 Inventory Dashboard",
                 "📊 Excel Sheet & Notes",
-                "📦 App Barcode Storage", 
-                "🖨️ Print 24-Sticker A4 (63.5x33.9mm)",
-                "➕ Generate & Save Barcode", 
-                "⚙️ Manage & Edit Inventory",
-                "🏷️ Vendor Barcode Folder (105x70mm)",
-                "📂 App Downloaded History", 
-                "♻️ Trash / Bin Folder"
-            ]
+                "📦 Barcode Folder",
+                "🏷️ Vendor Barcode Folder",
+                "📂 App Downloaded History",
+                "♻️ Trash / Bin Folder",
+            ],
         )
 
     # --- SECTION 0: INVENTORY DASHBOARD ---
@@ -1658,7 +1652,7 @@ else:
             st.metric(label="📥 Downloaded Records", value=total_history)
 
         st.markdown("---")
-        st.subheader("💡 Quick Actions & CSV Export")
+        st.subheader("💡 Quick Actions & CSV Backup")
         
         conn = get_db_connection()
         full_df = pd.read_sql_query("SELECT id, item_name, barcode_id, price, slot_category FROM inventory ORDER BY id DESC", conn)
@@ -1916,260 +1910,438 @@ else:
             st.success("✅ Description save ho gaya!")
             st.rerun()
 
-    # --- SECTION 1: APP STORAGE WITH SEARCH BAR ---
-    elif menu == "📦 App Barcode Storage":
-        st.title("📦 App Central Barcode Storage")
-        st.write("Kisi bhi sticker par click karke seedha print karein ya PNG download/history mein save karein.")
+    # --- FOLDER 1: NORMAL APP BARCODES (STORAGE, PRINT 24-STICKER, CREATE, EDIT/DELETE) ---
+    elif menu == "📦 Barcode Folder":
+        st.title("📦 Barcode Folder (App Barcodes)")
+        st.write("Aapke normal product barcodes ka poora folder — Storage, Print (63.5×33.9mm), Generate aur Edit/Delete ek hi jagah.")
         st.markdown("---")
 
-        search_query = st.text_input("🔍 Search Products (Type Item Name or Barcode ID)...", "").strip().lower()
+        b_tab_storage, b_tab_print, b_tab_create, b_tab_edit = st.tabs([
+            "📦 Storage & Search",
+            "🖨️ Print 24-Sticker A4",
+            "➕ Generate & Save",
+            "⚙️ Edit / Delete",
+        ])
 
-        conn = get_db_connection()
-        if search_query:
-            query = "SELECT id, item_name, barcode_id, price, slot_category FROM inventory WHERE LOWER(item_name) LIKE ? OR barcode_id LIKE ? ORDER BY id DESC"
-            df = pd.read_sql_query(query, conn, params=(f"%{search_query}%", f"%{search_query}%"))
-        else:
-            df = pd.read_sql_query("SELECT id, item_name, barcode_id, price, slot_category FROM inventory ORDER BY id DESC", conn)
-        conn.close()
+        with b_tab_storage:
+            search_query = st.text_input("🔍 Search Products (Type Item Name or Barcode ID)...", "", key="bf_search").strip().lower()
 
-        if df.empty:
-            st.info("Koi matching barcode nahi mila.")
-        else:
-            csv_data = df.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                label="📥 Export Filtered List as CSV",
-                data=csv_data,
-                file_name="raut_filtered_inventory.csv",
-                mime="text/csv",
-            )
-            st.markdown("---")
-
-            clickable_items = []
-            for _, row in df.iterrows():
-                item_name = str(row['item_name'])
-                barcode_id = str(row['barcode_id'])
-                img_io_item = generate_custom_barcode_image(item_name, barcode_id)
-                clickable_items.append({
-                    "name": item_name,
-                    "barcode": barcode_id,
-                    "b64": base64.b64encode(img_io_item.getvalue()).decode("utf-8"),
-                })
-
-            st.caption("💡 Jis sticker par click karenge, wahi sticker turant print preview mein khulega.")
-            render_clickable_barcode_list(clickable_items, key_prefix="storage_list")
-            st.markdown("---")
-
-            for _, row in df.iterrows():
-                item_id = row['id']
-                item_name = row['item_name']
-                barcode_id = row['barcode_id']
-                price = row['price']
-                slot_category = row['slot_category']
-
-                col1, col2, col3 = st.columns([3, 1.5, 1.5])
-                with col1:
-                    st.write(f"**{item_name.upper()}** (`{barcode_id}`) | Price: {price or 'N/A'} | Slot: {slot_category or 'N/A'}")
-                with col2:
-                    if st.button("📥 Save History", key=f"save_app_{item_id}"):
-                        record_download_history(item_name, barcode_id, st.session_state.username)
-                        st.success("Saved!")
-                with col3:
-                    local_img_io = generate_custom_barcode_image(item_name, barcode_id)
-                    if st.download_button(
-                        label="💾 Download PNG",
-                        data=local_img_io,
-                        file_name=f"{item_name}_{barcode_id}.png",
-                        mime="image/png",
-                        key=f"download_device_{item_id}",
-                    ):
-                        record_download_history(item_name, barcode_id, st.session_state.username)
-
-    # --- SECTION 1.5: 24-STICKER A4 GRID PRINT (63.5mm x 33.9mm, 3x8) ---
-    elif menu == "🖨️ Print 24-Sticker A4 (63.5x33.9mm)":
-        st.title("🖨️ Print 24-Sticker A4 Sheet (63.5mm × 33.9mm)")
-        st.write("Pehle sticker aur boxes chunein — kisi bhi sticker ya box par click karke print karein.")
-        st.markdown("---")
-
-        conn = get_db_connection()
-        p_df = pd.read_sql_query("SELECT id, item_name, barcode_id, price, slot_category FROM inventory ORDER BY id DESC", conn)
-        conn.close()
-
-        if p_df.empty:
-            st.info("Print karne ke liye koi products nahi hain.")
-        else:
-            view_mode = st.radio(
-                "View / Print Mode",
-                ["🎯 Ek Product (24-Box Sheet)", "📋 Sab Barcodes (All Products Sheet & List)"],
-                horizontal=True,
-                key="a4_24_view_mode",
-            )
-            st.markdown("---")
-
-            all_catalog = {}
-            label_to_key = {}
-            for _, row in p_df.iterrows():
-                b_key = str(row["barcode_id"])
-                i_name = str(row["item_name"])
-                img_io_item = generate_custom_barcode_image(i_name, b_key)
-                b64_item = base64.b64encode(img_io_item.getvalue()).decode("utf-8")
-                all_catalog[b_key] = {
-                    "name": i_name,
-                    "barcode": b_key,
-                    "b64": b64_item,
-                }
-                label_to_key[f"{i_name.upper()} (ID: {b_key})"] = b_key
-
-            if view_mode == "🎯 Ek Product (24-Box Sheet)":
-                selected_p_str = st.selectbox("1️⃣ Kaunsa Sticker / Product Print Karna Hai?", list(label_to_key.keys()), key="a4_24_sel_prod")
-                active_key = label_to_key[selected_p_str]
-                active_item = all_catalog[active_key]
-                p_name = active_item["name"]
-                p_barcode = active_item["barcode"]
-
-                c_start, c_qty = st.columns(2)
-                with c_start:
-                    start_box = st.number_input("2️⃣ Start Box # (1 to 24)", min_value=1, max_value=24, value=1, step=1)
-                max_avail = 25 - int(start_box)
-                with c_qty:
-                    qty = st.number_input("3️⃣ Kitne Stickers Chahiye?", min_value=1, max_value=max_avail, value=min(6, max_avail), step=1)
-
-                default_boxes = list(range(int(start_box), min(25, int(start_box) + int(qty))))
-                manual_boxes_str = st.text_input(
-                    "4️⃣ Ya Specific Box Numbers Likhein (Optional, comma se alag karein e.g. 1, 2, 5, 12)",
-                    value=", ".join(str(x) for x in default_boxes),
-                    key="a4_24_manual_boxes",
-                )
-
-                parsed_boxes = []
-                for part in manual_boxes_str.split(","):
-                    p_clean = part.strip()
-                    if p_clean.isdigit():
-                        b_num = int(p_clean)
-                        if 1 <= b_num <= 24 and b_num not in parsed_boxes:
-                            parsed_boxes.append(b_num)
-
-                single_io = generate_custom_barcode_image(p_name, p_barcode)
-                box_item_map = {str(b_num): active_key for b_num in parsed_boxes}
-
-                slots_24 = [None] * 24
-                for b_num in parsed_boxes:
-                    slots_24[b_num - 1] = active_item
-
-                col_dl1, col_dl2 = st.columns(2)
-                with col_dl1:
-                    if st.download_button(
-                        label="💾 Download Single Sticker PNG",
-                        data=single_io,
-                        file_name=f"{p_name}_{p_barcode}_63.5x33.9mm.png",
-                        mime="image/png",
-                    ):
-                        record_download_history(p_name, p_barcode, st.session_state.username)
-
-                with col_dl2:
-                    printable_a4_html = build_a4_24_grid_html(slots_24, auto_print=False)
-                    if st.download_button(
-                        label="📄 Download 1-Page A4 Print File (.html)",
-                        data=printable_a4_html.encode("utf-8"),
-                        file_name=f"A4_24_Stickers_{p_name}_{p_barcode}.html",
-                        mime="text/html",
-                    ):
-                        record_download_history(p_name, p_barcode, st.session_state.username)
-
-                st.markdown("#### 📋 Interactive 24-Box Sheet (Kisi bhi box par click karke ON/OFF karein, phir 'Print Selected (1 Page)' dabayein)")
-                render_interactive_24_sheet_and_print(
-                    items_catalog={active_key: active_item},
-                    box_item_map=box_item_map,
-                    enabled_box_indices=parsed_boxes,
-                )
-
-                st.info("💡 **Print Selected (1 Page)** dabane par alag clean print window khulegi jisme **1 sheet of paper** hi banega. Agar browser popup block kare toh **Download 1-Page A4 Print File (.html)** download karke khol lein.")
-
+            conn = get_db_connection()
+            if search_query:
+                query = "SELECT id, item_name, barcode_id, price, slot_category FROM inventory WHERE LOWER(item_name) LIKE ? OR barcode_id LIKE ? ORDER BY id DESC"
+                df = pd.read_sql_query(query, conn, params=(f"%{search_query}%", f"%{search_query}%"))
             else:
-                st.subheader("📋 Sab Saved Barcodes (All Products)")
-                search_all_bc = st.text_input("🔍 Sab Barcodes Mein Search Karein (Product Name ya Barcode ID)...", "", key="search_all_bc_mode").strip().lower()
+                df = pd.read_sql_query("SELECT id, item_name, barcode_id, price, slot_category FROM inventory ORDER BY id DESC", conn)
+            conn.close()
 
-                filtered_df = p_df
-                if search_all_bc:
-                    filtered_df = p_df[
-                        p_df["item_name"].str.lower().str.contains(search_all_bc, na=False)
-                        | p_df["barcode_id"].astype(str).str.lower().str.contains(search_all_bc, na=False)
-                    ]
+            if df.empty:
+                st.info("Koi matching barcode nahi mila.")
+            else:
+                csv_data = df.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label="📥 Export Filtered List as CSV",
+                    data=csv_data,
+                    file_name="raut_filtered_inventory.csv",
+                    mime="text/csv",
+                    key="bf_export_csv",
+                )
+                st.markdown("---")
 
-                if filtered_df.empty:
-                    st.info("Koi matching barcode nahi mila.")
-                else:
-                    with st.expander("🧩 Mixed 24-Box Sheet (Alag-Alag Barcodes Ek Hi Sheet Par)", expanded=True):
-                        c_fill_from, c_fill_to = st.columns(2)
-                        with c_fill_from:
-                            fill_start = st.number_input("Fill From Box #", min_value=1, max_value=24, value=1, step=1, key="mix_fill_start")
-                        with c_fill_to:
-                            fill_end = st.number_input("Fill Till Box #", min_value=int(fill_start), max_value=24, value=min(24, int(fill_start) + len(filtered_df) - 1), step=1, key="mix_fill_end")
+                clickable_items = []
+                for _, row in df.iterrows():
+                    item_name = str(row['item_name'])
+                    barcode_id = str(row['barcode_id'])
+                    img_io_item = generate_custom_barcode_image(item_name, barcode_id)
+                    clickable_items.append({
+                        "name": item_name,
+                        "barcode": barcode_id,
+                        "b64": base64.b64encode(img_io_item.getvalue()).decode("utf-8"),
+                    })
 
-                        filtered_keys = [str(r["barcode_id"]) for _, r in filtered_df.iterrows()]
-                        mixed_map = {}
-                        mixed_enabled = []
+                st.caption("💡 Jis sticker par click karenge, wahi sticker turant print preview mein khulega.")
+                render_clickable_barcode_list(clickable_items, key_prefix="storage_list")
+                st.markdown("---")
 
-                        for idx_box in range(int(fill_start), int(fill_end) + 1):
-                            item_idx = (idx_box - int(fill_start)) % len(filtered_keys)
-                            chosen_k = filtered_keys[item_idx]
-                            mixed_map[str(idx_box)] = chosen_k
-                            mixed_enabled.append(idx_box)
+                for _, row in df.iterrows():
+                    item_id = row['id']
+                    item_name = row['item_name']
+                    barcode_id = row['barcode_id']
+                    price = row['price']
+                    slot_category = row['slot_category']
 
-                        custom_box_override = st.text_input(
-                            "Specific Box Override (Optional — format `box:barcode_id`, e.g. `1:0000000000001, 2:0000000000002`)",
-                            value="",
-                            key="mix_box_override",
-                        )
-                        if custom_box_override.strip():
-                            for pair in custom_box_override.split(","):
-                                if ":" in pair:
-                                    b_part, k_part = pair.split(":", 1)
-                                    b_s = b_part.strip()
-                                    k_s = k_part.strip()
-                                    if b_s.isdigit() and 1 <= int(b_s) <= 24 and k_s in all_catalog:
-                                        mixed_map[b_s] = k_s
-                                        if int(b_s) not in mixed_enabled:
-                                            mixed_enabled.append(int(b_s))
+                    col1, col2, col3 = st.columns([3, 1.5, 1.5])
+                    with col1:
+                        st.write(f"**{item_name.upper()}** (`{barcode_id}`) | Price: {price or 'N/A'} | Slot: {slot_category or 'N/A'}")
+                    with col2:
+                        if st.button("📥 Save History", key=f"save_app_{item_id}"):
+                            record_download_history(item_name, barcode_id, st.session_state.username)
+                            st.success("Saved!")
+                    with col3:
+                        local_img_io = generate_custom_barcode_image(item_name, barcode_id)
+                        if st.download_button(
+                            label="💾 Download PNG",
+                            data=local_img_io,
+                            file_name=f"{item_name}_{barcode_id}.png",
+                            mime="image/png",
+                            key=f"download_device_{item_id}",
+                        ):
+                            record_download_history(item_name, barcode_id, st.session_state.username)
 
-                        slots_mixed = [None] * 24
-                        for b_num in mixed_enabled:
-                            k_val = mixed_map.get(str(b_num))
-                            if k_val and k_val in all_catalog:
-                                slots_mixed[b_num - 1] = all_catalog[k_val]
+        with b_tab_print:
+            st.subheader("🖨️ Print 24-Sticker A4 Sheet (63.5mm × 33.9mm)")
 
-                        mixed_html = build_a4_24_grid_html(slots_mixed, auto_print=False)
-                        st.download_button(
-                            label="📄 Download Mixed 1-Page A4 Print File (.html)",
-                            data=mixed_html.encode("utf-8"),
-                            file_name="A4_24_Mixed_Stickers.html",
+            conn = get_db_connection()
+            p_df = pd.read_sql_query("SELECT id, item_name, barcode_id, price, slot_category FROM inventory ORDER BY id DESC", conn)
+            conn.close()
+
+            if p_df.empty:
+                st.info("Print karne ke liye koi products nahi hain.")
+            else:
+                view_mode = st.radio(
+                    "View / Print Mode",
+                    ["🎯 Ek Product (24-Box Sheet)", "📋 Sab Barcodes (All Products Sheet & List)"],
+                    horizontal=True,
+                    key="a4_24_view_mode",
+                )
+                st.markdown("---")
+
+                all_catalog = {}
+                label_to_key = {}
+                for _, row in p_df.iterrows():
+                    b_key = str(row["barcode_id"])
+                    i_name = str(row["item_name"])
+                    img_io_item = generate_custom_barcode_image(i_name, b_key)
+                    b64_item = base64.b64encode(img_io_item.getvalue()).decode("utf-8")
+                    all_catalog[b_key] = {
+                        "name": i_name,
+                        "barcode": b_key,
+                        "b64": b64_item,
+                    }
+                    label_to_key[f"{i_name.upper()} (ID: {b_key})"] = b_key
+
+                if view_mode == "🎯 Ek Product (24-Box Sheet)":
+                    selected_p_str = st.selectbox("1️⃣ Kaunsa Sticker / Product Print Karna Hai?", list(label_to_key.keys()), key="a4_24_sel_prod")
+                    active_key = label_to_key[selected_p_str]
+                    active_item = all_catalog[active_key]
+                    p_name = active_item["name"]
+                    p_barcode = active_item["barcode"]
+
+                    c_start, c_qty = st.columns(2)
+                    with c_start:
+                        start_box = st.number_input("2️⃣ Start Box # (1 to 24)", min_value=1, max_value=24, value=1, step=1)
+                    max_avail = 25 - int(start_box)
+                    with c_qty:
+                        qty = st.number_input("3️⃣ Kitne Stickers Chahiye?", min_value=1, max_value=max_avail, value=min(6, max_avail), step=1)
+
+                    default_boxes = list(range(int(start_box), min(25, int(start_box) + int(qty))))
+                    manual_boxes_str = st.text_input(
+                        "4️⃣ Ya Specific Box Numbers Likhein (Optional, comma se alag karein e.g. 1, 2, 5, 12)",
+                        value=", ".join(str(x) for x in default_boxes),
+                        key="a4_24_manual_boxes",
+                    )
+
+                    parsed_boxes = []
+                    for part in manual_boxes_str.split(","):
+                        p_clean = part.strip()
+                        if p_clean.isdigit():
+                            b_num = int(p_clean)
+                            if 1 <= b_num <= 24 and b_num not in parsed_boxes:
+                                parsed_boxes.append(b_num)
+
+                    single_io = generate_custom_barcode_image(p_name, p_barcode)
+                    box_item_map = {str(b_num): active_key for b_num in parsed_boxes}
+
+                    slots_24 = [None] * 24
+                    for b_num in parsed_boxes:
+                        slots_24[b_num - 1] = active_item
+
+                    col_dl1, col_dl2 = st.columns(2)
+                    with col_dl1:
+                        if st.download_button(
+                            label="💾 Download Single Sticker PNG",
+                            data=single_io,
+                            file_name=f"{p_name}_{p_barcode}_63.5x33.9mm.png",
+                            mime="image/png",
+                            key="bf_dl_single_png",
+                        ):
+                            record_download_history(p_name, p_barcode, st.session_state.username)
+
+                    with col_dl2:
+                        printable_a4_html = build_a4_24_grid_html(slots_24, auto_print=False)
+                        if st.download_button(
+                            label="📄 Download 1-Page A4 Print File (.html)",
+                            data=printable_a4_html.encode("utf-8"),
+                            file_name=f"A4_24_Stickers_{p_name}_{p_barcode}.html",
                             mime="text/html",
-                            key="dl_mixed_a4_html",
+                            key="bf_dl_a4_html",
+                        ):
+                            record_download_history(p_name, p_barcode, st.session_state.username)
+
+                    st.markdown("#### 📋 Interactive 24-Box Sheet (Kisi bhi box par click karke ON/OFF karein, phir 'Print Selected (1 Page)' dabayein)")
+                    render_interactive_24_sheet_and_print(
+                        items_catalog={active_key: active_item},
+                        box_item_map=box_item_map,
+                        enabled_box_indices=parsed_boxes,
+                    )
+
+                    st.info("💡 **Print Selected (1 Page)** dabane par alag clean print window khulegi jisme **1 sheet of paper** hi banega. Agar browser popup block kare toh **Download 1-Page A4 Print File (.html)** download karke khol lein.")
+
+                else:
+                    st.subheader("📋 Sab Saved Barcodes (All Products)")
+                    search_all_bc = st.text_input("🔍 Sab Barcodes Mein Search Karein (Product Name ya Barcode ID)...", "", key="search_all_bc_mode").strip().lower()
+
+                    filtered_df = p_df
+                    if search_all_bc:
+                        filtered_df = p_df[
+                            p_df["item_name"].str.lower().str.contains(search_all_bc, na=False)
+                            | p_df["barcode_id"].astype(str).str.lower().str.contains(search_all_bc, na=False)
+                        ]
+
+                    if filtered_df.empty:
+                        st.info("Koi matching barcode nahi mila.")
+                    else:
+                        with st.expander("🧩 Mixed 24-Box Sheet (Alag-Alag Barcodes Ek Hi Sheet Par)", expanded=True):
+                            c_fill_from, c_fill_to = st.columns(2)
+                            with c_fill_from:
+                                fill_start = st.number_input("Fill From Box #", min_value=1, max_value=24, value=1, step=1, key="mix_fill_start")
+                            with c_fill_to:
+                                fill_end = st.number_input("Fill Till Box #", min_value=int(fill_start), max_value=24, value=min(24, int(fill_start) + len(filtered_df) - 1), step=1, key="mix_fill_end")
+
+                            filtered_keys = [str(r["barcode_id"]) for _, r in filtered_df.iterrows()]
+                            mixed_map = {}
+                            mixed_enabled = []
+
+                            for idx_box in range(int(fill_start), int(fill_end) + 1):
+                                item_idx = (idx_box - int(fill_start)) % len(filtered_keys)
+                                chosen_k = filtered_keys[item_idx]
+                                mixed_map[str(idx_box)] = chosen_k
+                                mixed_enabled.append(idx_box)
+
+                            custom_box_override = st.text_input(
+                                "Specific Box Override (Optional — format `box:barcode_id`, e.g. `1:0000000000001, 2:0000000000002`)",
+                                value="",
+                                key="mix_box_override",
+                            )
+                            if custom_box_override.strip():
+                                for pair in custom_box_override.split(","):
+                                    if ":" in pair:
+                                        b_part, k_part = pair.split(":", 1)
+                                        b_s = b_part.strip()
+                                        k_s = k_part.strip()
+                                        if b_s.isdigit() and 1 <= int(b_s) <= 24 and k_s in all_catalog:
+                                            mixed_map[b_s] = k_s
+                                            if int(b_s) not in mixed_enabled:
+                                                mixed_enabled.append(int(b_s))
+
+                            slots_mixed = [None] * 24
+                            for b_num in mixed_enabled:
+                                k_val = mixed_map.get(str(b_num))
+                                if k_val and k_val in all_catalog:
+                                    slots_mixed[b_num - 1] = all_catalog[k_val]
+
+                            mixed_html = build_a4_24_grid_html(slots_mixed, auto_print=False)
+                            st.download_button(
+                                label="📄 Download Mixed 1-Page A4 Print File (.html)",
+                                data=mixed_html.encode("utf-8"),
+                                file_name="A4_24_Mixed_Stickers.html",
+                                mime="text/html",
+                                key="dl_mixed_a4_html",
+                            )
+
+                            render_interactive_24_sheet_and_print(
+                                items_catalog=all_catalog,
+                                box_item_map=mixed_map,
+                                enabled_box_indices=mixed_enabled,
+                            )
+
+                        st.markdown("---")
+                        st.subheader("🏷️ Sab Barcodes (Jis Sticker Par Click Karenge Wahi Print Hoga)")
+                        clickable_all = []
+                        for _, row in filtered_df.iterrows():
+                            r_name = str(row["item_name"])
+                            r_barcode = str(row["barcode_id"])
+                            r_img_io = generate_custom_barcode_image(r_name, r_barcode)
+                            clickable_all.append({
+                                "name": r_name,
+                                "barcode": r_barcode,
+                                "b64": base64.b64encode(r_img_io.getvalue()).decode("utf-8"),
+                            })
+                        render_clickable_barcode_list(clickable_all, key_prefix="all_stickers_click")
+
+        with b_tab_create:
+            st.subheader("➕ Naya Barcode Generate Karein")
+            st.write("Item Name zaroori hai. Price aur Slot/Category optional hain. Barcode banate hi niche dikhega, aur pehle se bane naam par wahi barcode aayega.")
+
+            with st.form("generate_barcode_form"):
+                item_name = st.text_input("Item Name (Required)", placeholder="e.g. 12 no nut - 1 inch")
+                
+                col_p, col_s = st.columns(2)
+                with col_p:
+                    price_input = st.text_input("Price (Optional)", placeholder="e.g. ₹150")
+                with col_s:
+                    slot_input = st.text_input("Slot / Category (Optional)", placeholder="e.g. Rack A-3 / Hardware")
+                
+                save_btn = st.form_submit_button("Generate & Save to App")
+
+                if save_btn:
+                    clean_name = item_name.strip()
+                    if clean_name:
+                        conn = get_db_connection()
+                        c = conn.cursor()
+                        
+                        c.execute(
+                            "SELECT item_name, barcode_id, price, slot_category FROM inventory WHERE LOWER(item_name) = LOWER(?)",
+                            (clean_name,),
                         )
+                        existing_item = c.fetchone()
+                        
+                        if existing_item:
+                            conn.close()
+                            st.session_state.generated_preview_item = {
+                                "item_name": existing_item[0],
+                                "barcode_id": existing_item[1],
+                                "price": existing_item[2] or "",
+                                "slot_category": existing_item[3] or "",
+                                "is_existing": True,
+                            }
+                        else:
+                            auto_barcode_id = get_next_barcode_id()
+                            p_clean = price_input.strip()
+                            s_clean = slot_input.strip()
+                            try:
+                                c.execute(
+                                    "INSERT INTO inventory (item_name, barcode_id, price, slot_category) VALUES (?, ?, ?, ?)",
+                                    (clean_name, auto_barcode_id, p_clean, s_clean),
+                                )
+                                conn.commit()
+                                conn.close()
+                                log_activity(st.session_state.username, "CREATE", f"Created product {clean_name} with ID {auto_barcode_id}.")
+                                st.session_state.generated_preview_item = {
+                                    "item_name": clean_name,
+                                    "barcode_id": auto_barcode_id,
+                                    "price": p_clean,
+                                    "slot_category": s_clean,
+                                    "is_existing": False,
+                                }
+                            except Exception as e:
+                                conn.close()
+                                st.error(f"Error: {e}")
+                    else:
+                        st.warning("Kripya Item Name zaroor bharein.")
 
-                        render_interactive_24_sheet_and_print(
-                            items_catalog=all_catalog,
-                            box_item_map=mixed_map,
-                            enabled_box_indices=mixed_enabled,
-                        )
+            if st.session_state.generated_preview_item:
+                prev = st.session_state.generated_preview_item
+                prev_name = prev["item_name"]
+                prev_barcode = prev["barcode_id"]
+                prev_price = prev["price"]
+                prev_slot = prev["slot_category"]
 
-                    st.markdown("---")
-                    st.subheader("🏷️ Sab Barcodes (Jis Sticker Par Click Karenge Wahi Print Hoga)")
-                    clickable_all = []
-                    for _, row in filtered_df.iterrows():
-                        r_name = str(row["item_name"])
-                        r_barcode = str(row["barcode_id"])
-                        r_img_io = generate_custom_barcode_image(r_name, r_barcode)
-                        clickable_all.append({
-                            "name": r_name,
-                            "barcode": r_barcode,
-                            "b64": base64.b64encode(r_img_io.getvalue()).decode("utf-8"),
-                        })
-                    render_clickable_barcode_list(clickable_all, key_prefix="all_stickers_click")
+                st.markdown("---")
+                if prev["is_existing"]:
+                    st.info(f"ℹ️ '{prev_name}' ka barcode pehle se bana hua hai — niche wahi barcode show ho raha hai:")
+                else:
+                    st.success(f"✅ '{prev_name}' ka naya barcode ban gaya hai — niche preview dekhein:")
 
-    # --- SECTION 1.8: VENDOR BARCODE FOLDER (105mm x 70mm, A4-8) ---
-    elif menu == "🏷️ Vendor Barcode Folder (105x70mm)":
+                st.write(f"**Item:** {prev_name} | **Barcode ID:** `{prev_barcode}` | **Price:** {prev_price or 'N/A'} | **Slot/Cat:** {prev_slot or 'N/A'}")
+
+                try:
+                    gen_img_io = generate_custom_barcode_image(prev_name, prev_barcode)
+                    st.caption("💡 Sticker par click karke seedha print karein:")
+                    render_clickable_barcode_list(
+                        [{
+                            "name": prev_name,
+                            "barcode": prev_barcode,
+                            "b64": base64.b64encode(gen_img_io.getvalue()).decode("utf-8"),
+                        }],
+                        key_prefix="gen_preview",
+                    )
+
+                    if st.download_button(
+                        label="💾 Download Sticker PNG",
+                        data=gen_img_io,
+                        file_name=f"{prev_name}_{prev_barcode}.png",
+                        mime="image/png",
+                        key=f"gen_dl_{prev_barcode}",
+                    ):
+                        record_download_history(prev_name, prev_barcode, st.session_state.username)
+                except Exception as e:
+                    st.error(f"Error rendering barcode: {e}")
+
+        with b_tab_edit:
+            st.subheader("⚙️ Manage Inventory (Rename / Edit / Delete)")
+            st.write("Yahan se aap kisi bhi product ka naam, price ya slot badal sakte hain, ya delete karke Trash mein bhej sakte hain.")
+
+            conn = get_db_connection()
+            c = conn.cursor()
+            c.execute("SELECT id, item_name, barcode_id FROM inventory ORDER BY id DESC")
+            items = c.fetchall()
+            conn.close()
+
+            if not items:
+                st.info("Manage karne ke liye koi items nahi hain.")
+            else:
+                item_dict = {f"{item[1]} ({item[2]})": item[0] for item in items}
+                selected_item_str = st.selectbox("Select Product to Modify", list(item_dict.keys()), key="bf_edit_sel")
+                selected_id = item_dict[selected_item_str]
+
+                conn = get_db_connection()
+                c = conn.cursor()
+                c.execute("SELECT item_name, barcode_id, price, slot_category FROM inventory WHERE id = ?", (selected_id,))
+                curr_name, curr_barcode, curr_price, curr_slot = c.fetchone()
+                conn.close()
+
+                with st.form("edit_delete_form"):
+                    new_name = st.text_input("Rename Product Name", value=curr_name)
+                    new_price = st.text_input("Update Price", value=curr_price)
+                    new_slot = st.text_input("Update Slot / Category", value=curr_slot)
+                    
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        update_btn = st.form_submit_button("💾 Save Changes")
+                    with col2:
+                        delete_btn = st.form_submit_button("🗑️ Move to Trash")
+
+                    if update_btn:
+                        if new_name.strip():
+                            try:
+                                conn = get_db_connection()
+                                c = conn.cursor()
+                                c.execute(
+                                    "UPDATE inventory SET item_name = ?, price = ?, slot_category = ? WHERE id = ?",
+                                    (new_name.strip(), new_price.strip(), new_slot.strip(), selected_id)
+                                )
+                                conn.commit()
+                                conn.close()
+                                log_activity(st.session_state.username, "UPDATE", f"Updated product details for ID {selected_id}.")
+                                st.success(f"✅ Product details successfully updated!")
+                                st.rerun()
+                            except sqlite3.IntegrityError:
+                                st.error("⚠️ Yeh product name pehle se exist karta hai.")
+                        else:
+                            st.warning("Product name khali nahi ho sakta.")
+
+                    if delete_btn:
+                        conn = get_db_connection()
+                        c = conn.cursor()
+                        try:
+                            c.execute(
+                                "INSERT INTO trash_bin (original_id, item_name, barcode_id, price, slot_category) VALUES (?, ?, ?, ?, ?)",
+                                (selected_id, curr_name, curr_barcode, curr_price, curr_slot)
+                            )
+                            c.execute("DELETE FROM inventory WHERE id = ?", (selected_id,))
+                            conn.commit()
+                            conn.close()
+                            log_activity(st.session_state.username, "MOVE_TO_TRASH", f"Moved product {curr_name} to trash.")
+                            st.success(f"🗑️ Product successfully Trash folder mein bhej diya gaya hai!")
+                            st.rerun()
+                        except Exception as e:
+                            conn.close()
+                            st.error(f"Error moving to trash: {e}")
+
+    # --- FOLDER 2: VENDOR BARCODE FOLDER (105mm x 70mm, A4-8) ---
+    elif menu == "🏷️ Vendor Barcode Folder":
         st.title("🏷️ Vendor Barcode Folder (105mm × 70mm — A4-8)")
-        st.write("Dusri company ke custom/vendor barcodes yahin **Save, Print, Edit aur Delete** karein — normal inventory se bilkul alag.")
+        st.write("Dusri company ke custom/vendor barcodes yahin **Save, Print, Edit aur Delete** karein — normal barcode folder se bilkul alag.")
         st.markdown("---")
 
         tab_create, tab_folder, tab_edit_del = st.tabs([
@@ -2637,179 +2809,6 @@ else:
             )
             st.markdown("---")
             st.dataframe(logs_df, use_container_width=True)
-
-    # --- SECTION 5: GENERATE & SAVE NEW ---
-    elif menu == "➕ Generate & Save Barcode":
-        st.title("➕ Naya Barcode Generate Karein")
-        st.write("Item Name zaroori hai. Price aur Slot/Category optional hain. Barcode banate hi niche dikhega, aur pehle se bane naam par wahi barcode aayega.")
-
-        with st.form("generate_barcode_form"):
-            item_name = st.text_input("Item Name (Required)", placeholder="e.g. 12 no nut - 1 inch")
-            
-            col_p, col_s = st.columns(2)
-            with col_p:
-                price_input = st.text_input("Price (Optional)", placeholder="e.g. ₹150")
-            with col_s:
-                slot_input = st.text_input("Slot / Category (Optional)", placeholder="e.g. Rack A-3 / Hardware")
-            
-            save_btn = st.form_submit_button("Generate & Save to App")
-
-            if save_btn:
-                clean_name = item_name.strip()
-                if clean_name:
-                    conn = get_db_connection()
-                    c = conn.cursor()
-                    
-                    c.execute(
-                        "SELECT item_name, barcode_id, price, slot_category FROM inventory WHERE LOWER(item_name) = LOWER(?)",
-                        (clean_name,),
-                    )
-                    existing_item = c.fetchone()
-                    
-                    if existing_item:
-                        conn.close()
-                        st.session_state.generated_preview_item = {
-                            "item_name": existing_item[0],
-                            "barcode_id": existing_item[1],
-                            "price": existing_item[2] or "",
-                            "slot_category": existing_item[3] or "",
-                            "is_existing": True,
-                        }
-                    else:
-                        auto_barcode_id = get_next_barcode_id()
-                        p_clean = price_input.strip()
-                        s_clean = slot_input.strip()
-                        try:
-                            c.execute(
-                                "INSERT INTO inventory (item_name, barcode_id, price, slot_category) VALUES (?, ?, ?, ?)",
-                                (clean_name, auto_barcode_id, p_clean, s_clean),
-                            )
-                            conn.commit()
-                            conn.close()
-                            log_activity(st.session_state.username, "CREATE", f"Created product {clean_name} with ID {auto_barcode_id}.")
-                            st.session_state.generated_preview_item = {
-                                "item_name": clean_name,
-                                "barcode_id": auto_barcode_id,
-                                "price": p_clean,
-                                "slot_category": s_clean,
-                                "is_existing": False,
-                            }
-                        except Exception as e:
-                            conn.close()
-                            st.error(f"Error: {e}")
-                else:
-                    st.warning("Kripya Item Name zaroor bharein.")
-
-        if st.session_state.generated_preview_item:
-            prev = st.session_state.generated_preview_item
-            prev_name = prev["item_name"]
-            prev_barcode = prev["barcode_id"]
-            prev_price = prev["price"]
-            prev_slot = prev["slot_category"]
-
-            st.markdown("---")
-            if prev["is_existing"]:
-                st.info(f"ℹ️ '{prev_name}' ka barcode pehle se bana hua hai — niche wahi barcode show ho raha hai:")
-            else:
-                st.success(f"✅ '{prev_name}' ka naya barcode ban gaya hai — niche preview dekhein:")
-
-            st.write(f"**Item:** {prev_name} | **Barcode ID:** `{prev_barcode}` | **Price:** {prev_price or 'N/A'} | **Slot/Cat:** {prev_slot or 'N/A'}")
-
-            try:
-                gen_img_io = generate_custom_barcode_image(prev_name, prev_barcode)
-                st.caption("💡 Sticker par click karke seedha print karein:")
-                render_clickable_barcode_list(
-                    [{
-                        "name": prev_name,
-                        "barcode": prev_barcode,
-                        "b64": base64.b64encode(gen_img_io.getvalue()).decode("utf-8"),
-                    }],
-                    key_prefix="gen_preview",
-                )
-
-                if st.download_button(
-                    label="💾 Download Sticker PNG",
-                    data=gen_img_io,
-                    file_name=f"{prev_name}_{prev_barcode}.png",
-                    mime="image/png",
-                    key=f"gen_dl_{prev_barcode}",
-                ):
-                    record_download_history(prev_name, prev_barcode, st.session_state.username)
-            except Exception as e:
-                st.error(f"Error rendering barcode: {e}")
-
-    # --- SECTION 6: MANAGE & EDIT ---
-    elif menu == "⚙️ Manage & Edit Inventory":
-        st.title("⚙️ Manage Inventory (Rename / Edit / Delete)")
-        st.write("Yahan se aap kisi bhi product ka naam, price ya slot badal sakte hain, ya delete karke Trash mein bhej sakte hain.")
-        st.markdown("---")
-
-        conn = get_db_connection()
-        c = conn.cursor()
-        c.execute("SELECT id, item_name, barcode_id FROM inventory ORDER BY id DESC")
-        items = c.fetchall()
-        conn.close()
-
-        if not items:
-            st.info("Manage karne ke liye koi items nahi hain.")
-        else:
-            item_dict = {f"{item[1]} ({item[2]})": item[0] for item in items}
-            selected_item_str = st.selectbox("Select Product to Modify", list(item_dict.keys()))
-            selected_id = item_dict[selected_item_str]
-
-            conn = get_db_connection()
-            c = conn.cursor()
-            c.execute("SELECT item_name, barcode_id, price, slot_category FROM inventory WHERE id = ?", (selected_id,))
-            curr_name, curr_barcode, curr_price, curr_slot = c.fetchone()
-            conn.close()
-
-            with st.form("edit_delete_form"):
-                new_name = st.text_input("Rename Product Name", value=curr_name)
-                new_price = st.text_input("Update Price", value=curr_price)
-                new_slot = st.text_input("Update Slot / Category", value=curr_slot)
-                
-                col1, col2 = st.columns(2)
-                with col1:
-                    update_btn = st.form_submit_button("💾 Save Changes")
-                with col2:
-                    delete_btn = st.form_submit_button("🗑️ Move to Trash")
-
-                if update_btn:
-                    if new_name.strip():
-                        try:
-                            conn = get_db_connection()
-                            c = conn.cursor()
-                            c.execute(
-                                "UPDATE inventory SET item_name = ?, price = ?, slot_category = ? WHERE id = ?",
-                                (new_name.strip(), new_price.strip(), new_slot.strip(), selected_id)
-                            )
-                            conn.commit()
-                            conn.close()
-                            log_activity(st.session_state.username, "UPDATE", f"Updated product details for ID {selected_id}.")
-                            st.success(f"✅ Product details successfully updated!")
-                            st.rerun()
-                        except sqlite3.IntegrityError:
-                            st.error("⚠️ Yeh product name pehle se exist karta hai.")
-                    else:
-                        st.warning("Product name khali nahi ho sakta.")
-
-                if delete_btn:
-                    conn = get_db_connection()
-                    c = conn.cursor()
-                    try:
-                        c.execute(
-                            "INSERT INTO trash_bin (original_id, item_name, barcode_id, price, slot_category) VALUES (?, ?, ?, ?, ?)",
-                            (selected_id, curr_name, curr_barcode, curr_price, curr_slot)
-                        )
-                        c.execute("DELETE FROM inventory WHERE id = ?", (selected_id,))
-                        conn.commit()
-                        conn.close()
-                        log_activity(st.session_state.username, "MOVE_TO_TRASH", f"Moved product {curr_name} to trash.")
-                        st.success(f"🗑️ Product successfully Trash folder mein bhej diya gaya hai!")
-                        st.rerun()
-                    except Exception as e:
-                        conn.close()
-                        st.error(f"Error moving to trash: {e}")
 
     # --- SECTION 7: MANAGE EMPLOYEE ACCESS, ADMIN PASSWORD & FORCE LOGOUT ---
     elif menu == "⚙️ Manage Employee Access" and st.session_state.role == "Admin":
