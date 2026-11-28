@@ -82,7 +82,6 @@ def init_db():
     """
     )
 
-    # Multiple custom pages/sheets support
     c.execute(
         """
         CREATE TABLE IF NOT EXISTS custom_pages (
@@ -95,7 +94,6 @@ def init_db():
     """
     )
 
-    # Ensure at least one default custom page exists before migrating/inserting rows
     c.execute("SELECT id FROM custom_pages ORDER BY id ASC LIMIT 1")
     first_page = c.fetchone()
     if not first_page:
@@ -108,7 +106,6 @@ def init_db():
         first_page = c.fetchone()
     default_page_id = first_page[0]
 
-    # Rows belonging to a specific custom page
     c.execute(
         """
         CREATE TABLE IF NOT EXISTS custom_sheet_rows (
@@ -125,7 +122,6 @@ def init_db():
     """
     )
 
-    # Migrate existing custom_sheet_rows table if page_id column is missing
     c.execute("PRAGMA table_info(custom_sheet_rows)")
     existing_cols = [col[1] for col in c.fetchall()]
     if "page_id" not in existing_cols:
@@ -203,74 +199,84 @@ def record_download_history(item_name, barcode_id, username):
     except Exception:
         pass
 
-# Helper function: Optimized for 50mm x 37mm thermal stickers with CENTERED product name
+# Helper function: Sized for 52.5mm x 29.7mm (40 stickers per A4 sheet) with CENTERED product name
 def generate_custom_barcode_image(item_name, barcode_text):
-    scale = 3  
-    
+    scale = 3
+
     writer_options = {
-        'module_width': 0.35 * scale,
-        'module_height': 16.0 * scale,
-        'quiet_zone': 8 * scale,
-        'write_text': True,
-        'font_size': 14 * scale,
-        'text_distance': 6.0 * scale
+        "module_width": 0.28 * scale,
+        "module_height": 9.5 * scale,
+        "quiet_zone": 5 * scale,
+        "write_text": True,
+        "font_size": 10 * scale,
+        "text_distance": 3.5 * scale,
     }
 
     rv = BytesIO()
     Code128(str(barcode_text), writer=ImageWriter()).write(rv, options=writer_options)
     rv.seek(0)
-    
+
     barcode_img = Image.open(rv)
     bw, bh = barcode_img.size
-    
-    header_height = 90 * scale
-    sticker_width = max(bw + 40 * scale, 520 * scale)
-    sticker_height = bh + header_height
-    
-    sticker_img = Image.new("RGB", (sticker_width, sticker_height), "white")
+
+    # Target aspect ratio 52.5mm x 29.7mm
+    target_w = 525 * scale
+    target_h = 297 * scale
+    sticker_img = Image.new("RGB", (target_w, target_h), "white")
     draw = ImageDraw.Draw(sticker_img)
-    
+
     font_title = None
     font_paths = [
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
         "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
         "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf",
         "DejaVuSans-Bold.ttf",
-        "arialbd.ttf"
+        "arialbd.ttf",
     ]
-    
+
     for path in font_paths:
         try:
-            font_title = ImageFont.truetype(path, 32 * scale)
+            font_title = ImageFont.truetype(path, 22 * scale)
             break
         except IOError:
             continue
-            
+
     if not font_title:
         try:
-            font_title = ImageFont.load_default(size=32 * scale)
+            font_title = ImageFont.load_default(size=22 * scale)
         except TypeError:
             font_title = ImageFont.load_default()
 
     text_to_draw = f"{item_name.upper()}"
     bbox = draw.textbbox((0, 0), text_to_draw, font=font_title)
     text_w = bbox[2] - bbox[0]
-    text_x = (sticker_width - text_w) // 2
-    text_y = 22 * scale
+    if text_w > target_w - 30 * scale:
+        text_to_draw = text_to_draw[:26] + "..."
+        bbox = draw.textbbox((0, 0), text_to_draw, font=font_title)
+        text_w = bbox[2] - bbox[0]
 
+    text_x = max(5 * scale, (target_w - text_w) // 2)
+    text_y = 10 * scale
     draw.text((text_x, text_y), text_to_draw, fill="black", font=font_title)
-    
-    current_y = 70 * scale
-    draw.line([(25 * scale, current_y), (sticker_width - 25 * scale, current_y)], fill="black", width=3 * scale)
-    current_y += 15 * scale
-    
-    x_offset = max(0, (sticker_width - bw) // 2)
-    sticker_img.paste(barcode_img, (x_offset, current_y))
-    
-    final_width = sticker_width // scale
-    final_height = sticker_height // scale
-    sticker_img = sticker_img.resize((final_width, final_height), Image.Resampling.LANCZOS)
-    
+
+    line_y = 42 * scale
+    draw.line([(16 * scale, line_y), (target_w - 16 * scale, line_y)], fill="black", width=2 * scale)
+
+    avail_h = target_h - (line_y + 12 * scale)
+    avail_w = target_w - 24 * scale
+    ratio = min(avail_w / max(1, bw), avail_h / max(1, bh))
+    new_bw = max(1, int(bw * ratio))
+    new_bh = max(1, int(bh * ratio))
+    resized_bc = barcode_img.resize((new_bw, new_bh), Image.Resampling.LANCZOS)
+
+    bc_x = (target_w - new_bw) // 2
+    bc_y = line_y + 6 * scale + max(0, (avail_h - new_bh) // 2)
+    sticker_img.paste(resized_bc, (bc_x, bc_y))
+
+    final_w = target_w // scale
+    final_h = target_h // scale
+    sticker_img = sticker_img.resize((final_w, final_h), Image.Resampling.LANCZOS)
+
     final_io = BytesIO()
     sticker_img.save(final_io, format="PNG")
     final_io.seek(0)
@@ -283,9 +289,9 @@ def build_print_html(img_io):
     <html>
     <head>
         <style>
-            @page {{ size: 50mm 37mm; margin: 0; }}
+            @page {{ size: 52.5mm 29.7mm; margin: 0; }}
             body {{ margin: 0; display: flex; justify-content: center; align-items: center; height: 100vh; background: white; }}
-            img {{ width: 50mm; height: 37mm; object-fit: contain; }}
+            img {{ width: 52.5mm; height: 29.7mm; object-fit: contain; }}
         </style>
     </head>
     <body>
@@ -293,6 +299,103 @@ def build_print_html(img_io):
         <script>
             document.getElementById('print_img').onload = function() {{
                 window.print();
+            }};
+        </script>
+    </body>
+    </html>
+    """
+
+def build_a4_40_grid_html(slots_data):
+    """slots_data: list of 40 items (each dict with name, barcode, b64 or None for blank)."""
+    cells_html = []
+    for idx in range(40):
+        slot = slots_data[idx]
+        if slot:
+            cells_html.append(
+                f"""
+                <div class="label-cell">
+                    <div class="prod-name">{slot['name'].upper()}</div>
+                    <img src="data:image/png;base64,{slot['b64']}" />
+                </div>
+                """
+            )
+        else:
+            cells_html.append('<div class="label-cell blank-cell"></div>')
+
+    grid_body = "\n".join(cells_html)
+    return f"""
+    <html>
+    <head>
+        <style>
+            @page {{
+                size: A4 portrait;
+                margin: 0;
+            }}
+            * {{
+                box-sizing: border-box;
+            }}
+            body {{
+                margin: 0;
+                padding: 0;
+                background: #f5f5f5;
+                font-family: Arial, sans-serif;
+            }}
+            .a4-sheet {{
+                width: 210mm;
+                min-height: 297mm;
+                margin: 0 auto;
+                background: white;
+                display: grid;
+                grid-template-columns: repeat(4, 52.5mm);
+                grid-template-rows: repeat(10, 29.7mm);
+            }}
+            .label-cell {{
+                width: 52.5mm;
+                height: 29.7mm;
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                align-items: center;
+                padding: 1mm 1.5mm;
+                overflow: hidden;
+            }}
+            .prod-name {{
+                font-size: 6.5pt;
+                font-weight: bold;
+                text-align: center;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                max-width: 49mm;
+                margin-bottom: 0.5mm;
+                color: #000;
+            }}
+            .label-cell img {{
+                max-width: 49.5mm;
+                max-height: 22mm;
+                width: auto;
+                height: auto;
+                object-fit: contain;
+            }}
+            @media print {{
+                body {{
+                    background: white;
+                }}
+                .a4-sheet {{
+                    margin: 0;
+                }}
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="a4-sheet">
+            {grid_body}
+        </div>
+        <script>
+            window.onload = function() {{
+                setTimeout(function() {{
+                    window.print();
+                }}, 300);
             }};
         </script>
     </body>
@@ -397,7 +500,7 @@ else:
                 "📊 Inventory Dashboard",
                 "📊 Excel Sheet & Notes",
                 "📦 App Barcode Storage", 
-                "🖨️ Direct Print / Download 50x37mm",
+                "🖨️ Print 40-Sticker A4 (52.5x29.7mm)",
                 "📂 App Downloaded History", 
                 "♻️ Trash / Bin Folder", 
                 "📜 Activity Audit Logs",
@@ -413,7 +516,7 @@ else:
                 "📊 Inventory Dashboard",
                 "📊 Excel Sheet & Notes",
                 "📦 App Barcode Storage", 
-                "🖨️ Direct Print / Download 50x37mm",
+                "🖨️ Print 40-Sticker A4 (52.5x29.7mm)",
                 "📂 App Downloaded History", 
                 "♻️ Trash / Bin Folder", 
                 "➕ Generate & Save Barcode", 
@@ -567,7 +670,6 @@ else:
 
         curr_desc = p_desc_row[0] if p_desc_row else ""
 
-        # Top half: Manual editable Excel-like table for selected page
         edited_df = st.data_editor(
             sheet_df,
             use_container_width=True,
@@ -631,7 +733,6 @@ else:
                 st.success("✅ Is page ke saare rows delete ho gaye!")
                 st.rerun()
 
-        # Dedicated Edit / Delete single row option
         if not sheet_df.empty:
             with st.expander("✏️ Edit or Delete Specific Row"):
                 row_options = {
@@ -682,7 +783,6 @@ else:
                         st.success("✅ Selected row delete ho gaya!")
                         st.rerun()
 
-        # Bottom half: Description space for the selected page
         st.markdown("---")
         desc_input = st.text_area(
             f"📝 Description ({selected_page_name})",
@@ -777,10 +877,10 @@ else:
                     st.caption(f"Record ID: #{item_id} | Price: {price or 'N/A'} | Slot/Cat: {slot_category or 'N/A'}")
                     st.markdown("---")
 
-    # --- SECTION 1.5: DIRECT PRINT & DOWNLOAD 50x37mm STICKER ---
-    elif menu == "🖨️ Direct Print / Download 50x37mm":
-        st.title("🖨️ Direct Print & Download 50mm x 37mm Thermal Sticker")
-        st.write("Yahan se aap exact 50mm x 37mm size mein sticker download ya direct print kar sakte hain.")
+    # --- SECTION 1.5: 40-STICKER A4 GRID PRINT (52.5mm x 29.7mm) ---
+    elif menu == "🖨️ Print 40-Sticker A4 (52.5x29.7mm)":
+        st.title("🖨️ Print 40-Sticker A4 Sheet (52.5mm × 29.7mm)")
+        st.write("Canon PIXMA G3010 ke liye 40-label A4 sheet (4 columns × 10 rows) layout. Pehle se use hue stickers skip karne ke liye Start Box chunein.")
         st.markdown("---")
 
         conn = get_db_connection()
@@ -790,52 +890,60 @@ else:
         if p_df.empty:
             st.info("Print karne ke liye koi products nahi hain.")
         else:
-            view_mode = st.radio(
-                "View Mode",
-                ["🎯 Ek Product Chunein", "📋 Sab Barcode Ek Ke Niche Ek"],
+            mode = st.radio(
+                "Print Mode",
+                ["🎯 Ek Product ke Multiple Stickers", "📋 Sab Products Ek Ke Niche Ek (Single PNG/Print)"],
                 horizontal=True,
-                key="print_50x37_view_mode",
+                key="a4_40_mode",
             )
             st.markdown("---")
 
-            if view_mode == "🎯 Ek Product Chunein":
-                item_dict_p = {f"{row['item_name'].upper()} (ID: {row['barcode_id']})": (row['item_name'], row['barcode_id']) for _, row in p_df.iterrows()}
-                selected_p_str = st.selectbox("Select Product", list(item_dict_p.keys()))
+            if mode == "🎯 Ek Product ke Multiple Stickers":
+                item_dict_p = {
+                    f"{row['item_name'].upper()} (ID: {row['barcode_id']})": (row["item_name"], row["barcode_id"])
+                    for _, row in p_df.iterrows()
+                }
+                selected_p_str = st.selectbox("Select Product", list(item_dict_p.keys()), key="a4_sel_prod")
                 p_name, p_barcode = item_dict_p[selected_p_str]
 
-                st.markdown("### 🏷️ Sticker Preview (50mm x 37mm - Centered Name)")
-                try:
-                    single_img_io = generate_custom_barcode_image(p_name, p_barcode)
-                    st.image(single_img_io, width=320)
-                    
-                    st.markdown("---")
-                    
-                    col_opt1, col_opt2 = st.columns(2)
-                    
-                    with col_opt1:
-                        if st.download_button(
-                            label="💾 Download to Computer",
-                            data=single_img_io,
-                            file_name=f"Sticker_{p_name}_{p_barcode}.png",
-                            mime="image/png",
-                            type="secondary"
-                        ):
-                            record_download_history(p_name, p_barcode, st.session_state.username)
-                    
-                    with col_opt2:
-                        print_script_html = build_print_html(single_img_io)
-                        if st.button("🖨️ Direct Print via Printer", type="primary"):
-                            record_download_history(p_name, p_barcode, st.session_state.username)
-                            html(print_script_html, height=120)
-                            st.success("✅ Print dialog trigger ho gaya hai aur history mein record ho gaya hai!")
+                c_start, c_qty = st.columns(2)
+                with c_start:
+                    start_box = st.number_input("Start from Box # (1 to 40)", min_value=1, max_value=40, value=1, step=1)
+                max_avail = 41 - int(start_box)
+                with c_qty:
+                    qty = st.number_input("Kitne Stickers Print Karne Hain?", min_value=1, max_value=max_avail, value=min(10, max_avail), step=1)
 
-                    st.info("💡 **Note:** Product name ab bilkul center mein aayega!")
+                single_io = generate_custom_barcode_image(p_name, p_barcode)
+                single_b64 = base64.b64encode(single_io.getvalue()).decode("utf-8")
 
-                except Exception as e:
-                    st.error(f"Error: {e}")
+                st.markdown("#### 🏷️ Single Sticker Preview (52.5mm × 29.7mm)")
+                st.image(single_io, width=280)
+
+                col_a1, col_a2 = st.columns(2)
+                with col_a1:
+                    if st.download_button(
+                        label="💾 Download Single Sticker PNG",
+                        data=single_io,
+                        file_name=f"{p_name}_{p_barcode}_52.5x29.7mm.png",
+                        mime="image/png",
+                    ):
+                        record_download_history(p_name, p_barcode, st.session_state.username)
+
+                with col_a2:
+                    if st.button("🖨️ Print A4 Sheet (40-Grid)", type="primary"):
+                        slots = [None] * 40
+                        s_idx = int(start_box) - 1
+                        for i in range(int(qty)):
+                            if s_idx + i < 40:
+                                slots[s_idx + i] = {"name": p_name, "barcode": p_barcode, "b64": single_b64}
+                        record_download_history(p_name, p_barcode, st.session_state.username)
+                        html(build_a4_40_grid_html(slots), height=140)
+                        st.success(f"✅ Box #{int(start_box)} se {int(qty)} stickers ka A4 print dialog open ho gaya hai!")
+
+                st.info("💡 **Tip:** Print dialog mein Paper Size **A4**, Scale **100% / Actual Size**, aur Margins **None** rakhein.")
 
             else:
-                search_print = st.text_input("🔍 Search Barcode / Product...", "", key="search_all_50x37").strip().lower()
+                search_print = st.text_input("🔍 Search Barcode / Product...", "", key="search_all_40").strip().lower()
                 filtered_p_df = p_df
                 if search_print:
                     filtered_p_df = p_df[
@@ -857,23 +965,22 @@ else:
                             st.markdown(f"#### 🏷️ {r_name.upper()} (`{r_barcode}`)")
                             try:
                                 item_img_io = generate_custom_barcode_image(r_name, r_barcode)
-                                st.image(item_img_io, width=320)
+                                st.image(item_img_io, width=280)
 
                                 c_dl, c_pr = st.columns(2)
                                 with c_dl:
                                     if st.download_button(
-                                        label="💾 Download to Computer",
+                                        label="💾 Download PNG",
                                         data=item_img_io,
                                         file_name=f"Sticker_{r_name}_{r_barcode}.png",
                                         mime="image/png",
-                                        key=f"all_50x37_dl_{r_id}",
+                                        key=f"all_40_dl_{r_id}",
                                     ):
                                         record_download_history(r_name, r_barcode, st.session_state.username)
                                 with c_pr:
-                                    if st.button("🖨️ Direct Print via Printer", type="primary", key=f"all_50x37_pr_{r_id}"):
+                                    if st.button("🖨️ Direct Print", type="primary", key=f"all_40_pr_{r_id}"):
                                         record_download_history(r_name, r_barcode, st.session_state.username)
                                         html(build_print_html(item_img_io), height=120)
-                                        st.success(f"✅ '{r_name}' ka print dialog trigger ho gaya!")
                             except Exception as e:
                                 st.error(f"Error: {e}")
 
@@ -1030,7 +1137,7 @@ else:
             st.markdown("---")
             st.dataframe(logs_df, use_container_width=True)
 
-    # --- SECTION 5: GENERATE & SAVE NEW (SHOW BARCODE BELOW + REUSE EXISTING ON SAME NAME) ---
+    # --- SECTION 5: GENERATE & SAVE NEW ---
     elif menu == "➕ Generate & Save Barcode":
         st.title("➕ Naya Barcode Generate Karein")
         st.write("Item Name zaroori hai. Price aur Slot/Category optional hain. Barcode banate hi niche dikhega, aur pehle se bane naam par wahi barcode aayega.")
@@ -1092,7 +1199,6 @@ else:
                 else:
                     st.warning("Kripya Item Name zaroor bharein.")
 
-        # Show generated or already-existing barcode right below on this page
         if st.session_state.generated_preview_item:
             prev = st.session_state.generated_preview_item
             prev_name = prev["item_name"]
@@ -1110,7 +1216,7 @@ else:
 
             try:
                 gen_img_io = generate_custom_barcode_image(prev_name, prev_barcode)
-                st.image(gen_img_io, width=320)
+                st.image(gen_img_io, width=280)
 
                 col_b1, col_b2 = st.columns(2)
                 with col_b1:
